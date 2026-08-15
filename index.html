@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<!-- impact-src: sunpou-app-ux-taikei-map -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1743c3">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<title>配管切寸法計算</title>
+<style>  /* ── ① トークン表 ────────────────────────────────────────────
+     既定は「屋外・直射日光下／手袋」。html[data-mode="indoor"] で屋内に落とす。
+     直値を書かない。ここを変えれば全画面が変わる。 */
+  :root{
+    --page:#e8edf3; --card:#ffffff; --card-2:#f1f5f9;
+    --ink:#0b1220; --sub:#334155; --ink-inv:#ffffff;
+    --accent:#1743c3; --accent-ink:#ffffff; --accent-soft:#dbeafe;
+    --result:#0b2352; --result-2:#071a3f; --result-ink:#ffffff; --result-sub:#a8c8ee;
+    --ok:#146c32; --warn:#8a4b06; --warn-bg:#fff7e6; --danger:#a31515; --danger-bg:#fde2e2;
+    --line:#94a3b8; --line-soft:#cbd5e1;
+
+    --tap:56px; --tap-sm:48px;
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px;
+    --r-1:8px; --r-2:12px; --r-3:16px; --r-pill:999px;
+    --fs-cap:12px; --fs-sm:13px; --fs-base:15px; --fs-lg:18px;
+    --fs-num:30px; --fs-hero:56px; --fs-key:24px;
+    --bw:1px; --bw-on:2px;
+  }
+  :root[data-mode="indoor"]{
+    --page:#f4f6f9; --ink:#0f172a; --sub:#475569;
+    --accent:#2563eb; --result:#12306e; --result-2:#0b2352;
+    --line:#cbd5e1; --line-soft:#e2e8f0;
+  }
+
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+    background:var(--page);color:var(--ink);font-size:var(--fs-base);
+    padding-bottom:env(safe-area-inset-bottom)}
+
+  /* ── ② コンポーネント ───────────────────────────────────── */
+  header{background:var(--card);color:var(--ink);padding:var(--sp-2) var(--sp-3);
+    display:flex;align-items:center;gap:var(--sp-2);border-bottom:var(--bw) solid var(--line-soft);
+    position:sticky;top:0;z-index:20;min-height:var(--tap-sm)}
+  header h1{font-size:var(--fs-base);font-weight:700}
+  header .badge{font-size:var(--fs-cap);background:var(--card-2);color:var(--sub);
+    border:var(--bw) solid var(--line-soft);border-radius:var(--r-pill);padding:var(--sp-1) var(--sp-2)}
+  #modeBtn{margin-left:auto;min-height:var(--tap);padding:0 var(--sp-3);border-radius:var(--r-pill);
+    border:var(--bw) solid var(--line);background:var(--card-2);color:var(--ink);
+    font-size:var(--fs-cap);font-weight:700;cursor:pointer}
+
+  .tabs{display:flex;background:var(--card);border-bottom:var(--bw) solid var(--line-soft);
+    position:sticky;top:var(--tap-sm);z-index:19}
+  .tabs button{flex:1;min-height:var(--tap);border:none;background:none;
+    font-size:var(--fs-sm);font-weight:700;color:var(--sub);
+    border-bottom:3px solid transparent;cursor:pointer}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+
+  main{max-width:560px;margin:0 auto;padding:var(--sp-3) var(--sp-3) 40px}
+  .card{background:var(--card);border:var(--bw) solid var(--line-soft);border-radius:var(--r-3);
+    padding:var(--sp-3);margin-bottom:var(--sp-3)}
+  .card h2{font-size:var(--fs-cap);color:var(--sub);font-weight:700;margin-bottom:var(--sp-2);
+    display:flex;align-items:center;gap:var(--sp-2)}
+
+  .chips{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+  .chip{min-height:var(--tap);padding:0 var(--sp-4);border-radius:var(--r-pill);
+    border:var(--bw) solid var(--line);background:var(--card);
+    font-size:var(--fs-sm);font-weight:700;color:var(--sub);cursor:pointer;white-space:nowrap}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .sizes{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-2)}
+  .sizes .chip{padding:0;width:var(--tap);text-align:center}
+  .sizes .chip:disabled{opacity:.35}
+  .partner{margin-top:var(--sp-2)}
+  .partner .plabel{font-size:var(--fs-cap);color:var(--warn);font-weight:700;margin-bottom:var(--sp-1)}
+  .partner .chips .chip{padding:0;width:var(--tap)}
+  .partner .chip.on{background:var(--warn);border-color:var(--warn)}
+
+  .pickrow{display:flex;gap:var(--sp-2)}
+  .pick{flex:1;min-height:var(--tap);border:var(--bw) solid var(--line);border-radius:var(--r-2);
+    padding:var(--sp-2);text-align:center;cursor:pointer;background:var(--card)}
+  .pick .lbl{font-size:var(--fs-cap);color:var(--sub);font-weight:700}
+  .pick .val{font-size:var(--fs-sm);font-weight:700;margin-top:2px}
+  .pick svg{display:block;margin:var(--sp-1) auto 0;width:76px;height:56px}
+
+  #diagram{width:100%;height:auto;display:block}
+  .refrow{display:flex;gap:var(--sp-2);margin-top:var(--sp-2)}
+  .refcol{flex:1}
+  .refcol .rlabel{font-size:var(--fs-cap);color:var(--sub);font-weight:700;text-align:center;margin-bottom:var(--sp-1)}
+  .refbtns{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-1)}
+  .refbtns button{min-height:var(--tap);padding:0 2px;font-size:var(--fs-cap);font-weight:700;
+    border:var(--bw) solid var(--line);border-radius:var(--r-1);background:var(--card);
+    color:var(--sub);cursor:pointer}
+  .refbtns button.on{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
+
+  .measure{display:flex;align-items:center;gap:var(--sp-2)}
+  .measure input{flex:1;height:var(--tap);font-size:var(--fs-num);font-weight:700;
+    padding:0 var(--sp-3);border:var(--bw-on) solid var(--accent);
+    border-radius:var(--r-2);width:100%;text-align:right;color:var(--ink);background:var(--card)}
+  .measure input:focus{outline:3px solid var(--accent-soft)}
+  .measure .unit{font-size:var(--fs-base);color:var(--sub);font-weight:700}
+  .clearbtn{width:var(--tap);height:var(--tap);border:var(--bw) solid var(--line);
+    border-radius:var(--r-2);background:var(--card);color:var(--sub);
+    font-size:var(--fs-lg);cursor:pointer;flex-shrink:0}
+
+  /* ── ③ ブロック: 結果ヒーロー ─────────────────────────── */
+  .result{background:var(--result);color:var(--result-ink);border:none}
+  .result .rline{display:flex;align-items:baseline;justify-content:space-between}
+  .result .rtitle{font-size:var(--fs-cap);font-weight:700;color:var(--result-sub)}
+  .result .rval{font-size:var(--fs-hero);font-weight:800;letter-spacing:1px;line-height:1}
+  .result .rval small{font-size:var(--fs-lg);font-weight:700;margin-left:3px}
+  .formula{margin-top:var(--sp-2);font-size:var(--fs-cap);line-height:1.7;
+    background:var(--result-2);border-radius:var(--r-1);padding:var(--sp-2);word-break:break-all}
+  .neg{color:#ffc9c9;font-weight:800}
+  .detail{margin-top:var(--sp-2);border-top:var(--bw) solid rgba(255,255,255,.25);
+    padding-top:var(--sp-2);display:flex;gap:var(--sp-2);font-size:var(--fs-cap)}
+  .detail div{flex:1;background:var(--result-2);border-radius:var(--r-1);padding:var(--sp-2);line-height:1.6}
+  .detailtoggle{margin-top:var(--sp-2);min-height:var(--tap);width:100%;
+    font-size:var(--fs-cap);font-weight:700;color:var(--result-sub);
+    background:var(--result-2);border:none;border-radius:var(--r-1);cursor:pointer}
+  .detail.hidden{display:none}
+
+  /* ── テンキー ───────────────────────────────────────────── */
+  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-2);margin-top:var(--sp-2)}
+  .keypad button{min-height:var(--tap);font-size:var(--fs-key);font-weight:700;color:var(--ink);
+    background:var(--card);border:var(--bw) solid var(--line);border-radius:var(--r-2);cursor:pointer}
+  .keypad button:active{background:var(--accent-soft)}
+  .keypad button.util{font-size:var(--fs-base);color:var(--sub)}
+
+  .note{font-size:var(--fs-cap);color:var(--warn);background:var(--warn-bg);
+    border:var(--bw) solid var(--warn);border-radius:var(--r-2);
+    padding:var(--sp-2) var(--sp-3);line-height:1.6;margin-bottom:var(--sp-3)}
+
+  .cust{display:flex;gap:var(--sp-2);margin-top:var(--sp-2)}
+  .cust label{flex:1;font-size:var(--fs-cap);color:var(--sub);font-weight:700}
+  .cust input{width:100%;min-height:var(--tap);padding:0 var(--sp-2);font-size:var(--fs-base);
+    border:var(--bw) solid var(--line);border-radius:var(--r-1);margin-top:2px;text-align:right}
+  .cust select{width:100%;min-height:var(--tap);padding:0 var(--sp-2);font-size:var(--fs-sm);
+    border:var(--bw) solid var(--line);border-radius:var(--r-1);margin-top:2px;
+    background:var(--card);color:var(--ink)}
+
+  #sheetBg{position:fixed;inset:0;background:rgba(11,18,32,.5);z-index:40;opacity:0;
+    pointer-events:none;transition:opacity .18s}
+  #sheetBg.open{opacity:1;pointer-events:auto}
+  #sheet{position:fixed;left:0;right:0;bottom:0;background:var(--card);z-index:41;
+    border-radius:var(--r-3) var(--r-3) 0 0;transform:translateY(100%);transition:transform .22s;
+    max-height:76dvh;overflow-y:auto;
+    padding:var(--sp-3) var(--sp-3) calc(var(--sp-5) + env(safe-area-inset-bottom))}
+  #sheet.open{transform:translateY(0)}
+  #sheet h3{font-size:var(--fs-base);margin-bottom:var(--sp-3)}
+  .fitgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-2)}
+  .fitbtn{min-height:var(--tap);border:var(--bw) solid var(--line);border-radius:var(--r-2);
+    background:var(--card);padding:var(--sp-2) var(--sp-1);cursor:pointer;text-align:center}
+  .fitbtn.on{border-color:var(--accent);border-width:var(--bw-on);background:var(--accent-soft)}
+  .fitbtn svg{width:76px;height:56px;display:block;margin:0 auto;max-width:100%}
+  .fitbtn .fname{font-size:var(--fs-cap);font-weight:700;margin-top:3px;line-height:1.3}
+
+  table{width:100%;border-collapse:collapse;font-size:var(--fs-cap)}
+  th,td{border:var(--bw) solid var(--line-soft);padding:var(--sp-1);text-align:center}
+  th{background:var(--card-2);color:var(--sub)}
+  td:first-child{font-weight:700}
+  .cat-fit{margin-bottom:var(--sp-4)}
+  .cat-fit h3{font-size:var(--fs-sm);margin:var(--sp-1) 0 var(--sp-2);
+    display:flex;align-items:center;gap:var(--sp-2)}
+  .cat-fit h3 svg{width:56px;height:42px;flex-shrink:0}
+  .legend{font-size:var(--fs-cap);color:var(--sub);line-height:1.7;margin:var(--sp-2) 0}
+
+  .fieldres{background:var(--accent-soft);border:var(--bw) solid var(--accent);
+    border-radius:var(--r-2);padding:var(--sp-2) var(--sp-3);
+    font-size:var(--fs-sm);line-height:1.9;margin-top:var(--sp-2)}
+  .fieldres b{font-size:var(--fs-lg);color:var(--accent)}
+  .fieldres .big{font-size:var(--fs-num);font-weight:800;color:var(--accent)}
+
+  .addbtn{margin-top:var(--sp-3);min-height:var(--tap);width:100%;padding:0 var(--sp-4);
+    font-size:var(--fs-base);font-weight:700;border:none;border-radius:var(--r-2);
+    background:var(--ok);color:var(--ink-inv);cursor:pointer;display:block}
+  .fieldres .addbtn{background:var(--accent);color:var(--accent-ink)}
+  .minibtn{font-size:var(--fs-cap);font-weight:700;border:var(--bw) solid var(--line);
+    background:var(--card);color:var(--sub);border-radius:var(--r-1);
+    min-height:var(--tap);padding:0 var(--sp-3);margin-left:auto;cursor:pointer}
+
+  .cutrow{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) 2px;
+    border-bottom:1px dashed var(--line-soft);font-size:var(--fs-cap);line-height:1.4;cursor:pointer}
+  .cutrow .cno{color:var(--sub);font-weight:700;flex-shrink:0}
+  .cutrow .clabel{word-break:break-all}
+  .cutrow .cval{margin-left:auto;font-weight:800;font-size:var(--fs-lg);
+    color:var(--accent);white-space:nowrap}
+  .cutrow .del{border:none;background:var(--danger-bg);color:var(--danger);border-radius:var(--r-1);
+    width:var(--tap-sm);height:var(--tap-sm);font-weight:700;cursor:pointer;flex-shrink:0}
+  .cutempty{font-size:var(--fs-cap);color:var(--sub);padding:var(--sp-1) 0}
+  .hidden{display:none}
+
+  /* impact-src: sunpou-app-suuji-typography — 数値は等幅数字（tabular-nums）で表示。
+     桁が揃わないと転置エラー(1350⇄1530)を見逃す。和文フォントはtnum非対応の場合が
+     あるため、数字が主役の要素は欧文フォントを先行させる */
+  .rval,.measure input,.cust input,.keypad button,.cutrow .cval,.formula,.fieldres,td{
+    font-variant-numeric:tabular-nums;
+    font-family:"Segoe UI",Roboto,-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif}
+
+  /* impact-src: sunpou-app-gosa-boushi — 読み合わせモード。切る直前に数字を声に出して
+     確認する対象を作る（指差呼称: 誤操作率2.38%→0.38%・鉄道総研1994） */
+  #readBg{position:fixed;inset:0;background:var(--result);color:var(--result-ink);z-index:60;
+    display:none;flex-direction:column;align-items:center;justify-content:center;
+    padding:var(--sp-4);text-align:center;gap:var(--sp-3)}
+  #readBg.open{display:flex}
+  #readNo{font-size:var(--fs-lg);color:var(--result-sub);font-weight:700}
+  #readLabel{font-size:var(--fs-base);color:var(--result-sub);line-height:1.5;
+    word-break:break-all;max-width:520px}
+  #readVal{font-size:clamp(64px,22vw,150px);font-weight:800;letter-spacing:2px;line-height:1}
+  #readVal small{font-size:var(--fs-lg);font-weight:700}
+  #readNav{display:flex;gap:var(--sp-3)}
+  #readNav button{min-height:var(--tap);min-width:96px;font-size:var(--fs-base);font-weight:700;
+    border:var(--bw) solid var(--result-sub);border-radius:var(--r-2);background:var(--result-2);
+    color:var(--result-ink);cursor:pointer}
+  #readNav button:disabled{opacity:.35}
+  #readHint{font-size:var(--fs-cap);color:var(--result-sub)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔧 配管切寸法計算</h1>
+  <span class="badge">オフラインOK</span>
+  <button id="modeBtn" onclick="toggleMode()">屋内にする</button>
+</header>
+
+<div class="tabs">
+  <button id="tabCalc" class="on" onclick="showTab('calc')">✂️ 切寸法</button>
+  <button id="tabField" onclick="showTab('field')">📐 現場計算</button>
+  <button id="tabCat" onclick="showTab('cat')">📖 カタログ</button>
+</div>
+
+<main>
+<!-- ============ 計算タブ ============ -->
+<div id="viewCalc">
+
+  <div class="card result">
+    <div class="rline">
+      <div class="rtitle">✂️ 切寸法（パイプを切る長さ）</div>
+      <div class="rval" id="cutVal">—<small>mm</small></div>
+    </div>
+    <div class="formula" id="formula"></div>
+    <!-- 内訳は既定で畳む。結果カードが高いと「打つ→答えを見る」が1画面に収まらない。
+         式(formula)は現物照合に要るので常時表示のまま残す -->
+    <button class="detailtoggle" id="detailBtn" onclick="toggleDetail()" aria-expanded="false">左右の内訳を見る</button>
+    <div class="detail hidden" id="detail"></div>
+    <button class="addbtn" id="addCalcCut" onclick="addCutFromCalc()" disabled>＋ 切断リストへ追加</button>
+  </div>
+
+  <div class="card">
+    <h2>測定値（実測した寸法）</h2>
+    <div class="measure">
+      <input type="number" id="measured" inputmode="none" placeholder="500" oninput="calc()">
+      <span class="unit">mm</span>
+      <button class="clearbtn" onclick="clearMeasured()" title="クリア">✕</button>
+    </div>
+    <div class="keypad" id="keypad">
+      <button onclick="key('7')">7</button><button onclick="key('8')">8</button><button onclick="key('9')">9</button>
+      <button onclick="key('4')">4</button><button onclick="key('5')">5</button><button onclick="key('6')">6</button>
+      <button onclick="key('1')">1</button><button onclick="key('2')">2</button><button onclick="key('3')">3</button>
+      <button class="util" onclick="key('.')">.</button><button onclick="key('0')">0</button>
+      <button class="util" id="bsKey" title="長押しで全消去">⌫</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>左右の継手・呼び径（切るパイプの径）</h2>
+    <div class="pickrow">
+      <div class="pick" onclick="openSheet('L')">
+        <div class="lbl">左の継手</div>
+        <div id="iconL"></div>
+        <div class="val" id="nameL">—</div>
+      </div>
+      <div class="pick" onclick="openSheet('R')">
+        <div class="lbl">右の継手</div>
+        <div id="iconR"></div>
+        <div class="val" id="nameR">—</div>
+      </div>
+    </div>
+    <div class="sizes" id="sizeChips"></div>
+    <div id="partnerL" class="partner hidden"></div>
+    <div id="partnerR" class="partner hidden"></div>
+    <div id="custL" class="cust hidden">
+      <label>左: 芯〜端面 L (mm)<input type="number" id="custL_a" inputmode="decimal" onchange="calc()"></label>
+      <label>左: 差込/ねじ込み代 (mm)<input type="number" id="custL_i" inputmode="decimal" onchange="calc()"></label>
+    </div>
+    <div id="custR" class="cust hidden">
+      <label>右: 芯〜端面 L (mm)<input type="number" id="custR_a" inputmode="decimal" onchange="calc()"></label>
+      <label>右: 差込/ねじ込み代 (mm)<input type="number" id="custR_i" inputmode="decimal" onchange="calc()"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>継手の種類（規格系統）</h2>
+    <div class="chips" id="famChips"></div>
+  </div>
+
+  <!-- impact-src: genba-sunpou-yousetsu — 突合せ溶接だけルート間隔が両端ぶん切寸に効く。
+       既定は空欄=0（自社標準なし・WPS依存。2026-08-12決定: 推測で数値を入れない） -->
+  <div class="card hidden" id="rootGapCard">
+    <h2>ルート間隔（突合せ溶接・任意）</h2>
+    <div class="cust" style="margin-top:0">
+      <label>ルート間隔 g (mm・1端あたり)<input type="number" id="rootGap" inputmode="decimal" oninput="calc()"></label>
+    </div>
+    <div class="legend">切寸 ＝ 測定値 − Z − <b>g × 溶接する端数</b>。gはWPS・仕様書依存（自社標準なし）。空欄＝0で従来どおり。開けすぎのぶれは逃げ（現場合わせ区間）で吸収する。</div>
+  </div>
+
+  <div class="card">
+    <h2>測定位置（赤い寸法線の基準）
+      <button class="minibtn" onclick="setBothRefs('center')">両方=芯</button>
+      <button class="minibtn" style="margin-left:4px" onclick="setBothRefs('face')">両方=端面</button>
+    </h2>
+    <svg id="diagram" viewBox="0 0 360 150" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="refrow">
+      <div class="refcol">
+        <div class="rlabel">左の基準</div>
+        <div class="refbtns" id="refL"></div>
+      </div>
+      <div class="refcol">
+        <div class="rlabel">右の基準</div>
+        <div class="refbtns" id="refR"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📋 切断リスト（現場メモ）
+      <button class="minibtn" onclick="clearCutList()">全消去</button>
+    </h2>
+    <div id="cutList_calc"></div>
+  </div>
+
+  <div class="note">⚠️ 寸法データはJIS規格・メーカー公表値に基づく<b>参考値</b>です。継手はメーカー・ロットで寸法が異なる場合があります。本施工前に実物・カタログで必ず確認してください。ねじ込み継手のねじ込み代は締め付け具合で±1〜2mm変わります。TS/VUキャップは全長データ未収録のため受口端面基準のみ対応。</div>
+</div>
+
+<!-- ============ 現場計算タブ ============ -->
+<div id="viewField" class="hidden">
+
+  <div class="card">
+    <h2>オフセット計算 — 場面を選択
+      <button class="minibtn" onclick="clearOffset()">入力クリア</button>
+    </h2>
+    <div class="chips" id="sceneChips" style="margin-bottom:6px"></div>
+    <svg id="offSvg" viewBox="0 0 360 150" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="chips" id="fFamChips" style="margin:8px 0 0"></div>
+    <div class="sizes" id="fSizeChips" style="margin-top:6px"></div>
+    <div class="cust" style="margin-top:6px">
+      <label>継手①（斜め管の端）<select id="fFitL" onchange="setFFit('L',this.value)"></select></label>
+      <label>継手②（斜め管の端）<select id="fFitR" onchange="setFFit('R',this.value)"></select></label>
+    </div>
+    <div class="chips" id="modeChips" style="margin:10px 0 6px"></div>
+    <div class="chips" id="angleChips" style="margin-bottom:6px"></div>
+    <div class="cust" style="margin-top:0">
+      <label id="lblH">芯ズレ H (mm)<input type="number" id="offH" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label id="lblRoll">ロール（直交ズレ・任意）<input type="number" id="offV" inputmode="decimal" oninput="renderFieldCalc()"></label>
+    </div>
+    <div class="cust" id="measureRow">
+      <label>逃げ（直角方向の距離）(mm)<input type="number" id="offRun" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label>斜め 芯々（実測できれば）(mm)<input type="number" id="offS" inputmode="decimal" oninput="renderFieldCalc()"></label>
+    </div>
+    <div class="cust hidden" id="obRow">
+      <label>上部水平の芯々 W (mm・任意)<input type="number" id="offW" inputmode="decimal" oninput="renderFieldCalc()"></label>
+    </div>
+    <div class="cust">
+      <label id="dedLabel">両端の継手控除 合計 (mm)<input type="number" id="offDed" inputmode="decimal" oninput="fieldDedTouched=true;renderFieldCalc()"></label>
+    </div>
+    <div class="fieldres" id="offOut">芯ズレを入力してください</div>
+  </div>
+
+  <div class="card">
+    <h2>ピタゴラス（直角三角形）— 2つ入力で残りを計算</h2>
+    <svg viewBox="0 0 360 110" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 60 95 L 300 95 L 300 20 Z" fill="#dbeafe" stroke="#2563eb" stroke-width="2.5"/>
+      <rect x="285" y="80" width="15" height="15" fill="none" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="180" y="112" font-size="13" text-anchor="middle" fill="#334155">底辺 A</text>
+      <text x="318" y="62" font-size="13" fill="#334155">高さ B</text>
+      <text x="150" y="48" font-size="13" fill="#dc2626" transform="rotate(-17 165 50)">斜辺 C</text>
+      <path d="M 90 95 A 30 30 0 0 0 87 82" fill="none" stroke="#b45309" stroke-width="1.5"/>
+      <text x="98" y="88" font-size="12" fill="#b45309">θ</text>
+    </svg>
+    <div class="cust" style="margin-top:4px">
+      <label>底辺 A (mm)<input type="number" id="pyA" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label>高さ B (mm)<input type="number" id="pyB" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label>斜辺 C (mm)<input type="number" id="pyC" inputmode="decimal" oninput="renderFieldCalc()"></label>
+    </div>
+    <div class="fieldres" id="pyOut">どれか2つを入力してください</div>
+  </div>
+
+  <div class="card">
+    <h2>勾配計算（排水など）— 2つ入力で残りを計算</h2>
+    <div class="chips" id="slopeChips" style="margin-bottom:8px"></div>
+    <div class="cust" style="margin-top:0">
+      <label>配管長さ L (m)<input type="number" id="slL" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label>落差 (mm)<input type="number" id="slD" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label>勾配 1/n の n<input type="number" id="slN" inputmode="decimal" oninput="fieldSlopeTouched=true;renderFieldCalc()"></label>
+    </div>
+    <div class="fieldres" id="slOut">長さ＋勾配（または落差）を入力してください</div>
+  </div>
+
+  <!-- impact-src: genba-sunpou-takasa-kobai — COPは現場で直接測れない。
+       測れる面(BOP/TOP)から式で出す。COP = BOP + OD/2 = TOP − OD/2 -->
+  <div class="card">
+    <h2>高さ換算（BOP / COP / TOP）— 上のフォーム選択の管種・呼び径を使用</h2>
+    <div class="chips" id="hFaceChips" style="margin-bottom:6px"></div>
+    <div class="cust" style="margin-top:0">
+      <label>測った高さ (mm)<input type="number" id="hVal" inputmode="decimal" oninput="renderFieldCalc()"></label>
+      <label>保温厚 (mm・任意)<input type="number" id="hIns" inputmode="decimal" oninput="renderFieldCalc()"></label>
+    </div>
+    <div class="fieldres" id="hOut"></div>
+  </div>
+
+  <!-- impact-src: genba-sunpou-enbi-setchaku — 塩ビの逃げの実体＝ヤリトリ(補修)ソケット。
+       伸縮量はクボタケミックス公表値（一次情報・2024-09-10版） -->
+  <div class="card">
+    <h2>逃げ・ヤリトリ（現場合わせ・塩ビ）</h2>
+    <div class="chips" id="yariChips"></div>
+    <div class="cust" style="margin-top:6px">
+      <label>吸収したい誤差・ぶれ (mm・任意)<input type="number" id="yariNeed" inputmode="decimal" oninput="renderFieldCalc()"></label>
+    </div>
+    <div class="fieldres" id="yariOut"></div>
+    <div class="legend">逃げ（現場合わせ区間）は<b>1系統に1箇所</b>。ゼロだと全ピースが合わず、2箇所だと両方切る。工法別: ねじ込み＝<b>ユニオン</b>／溶接＝<b>最後に閉じる直管を長めに</b>／塩ビ＝<b>ヤリトリソケット</b>。伸縮量の出典: クボタケミックス 伸縮継手設置基準</div>
+  </div>
+
+  <div class="card">
+    <h2>📋 切断リスト（現場メモ）
+      <button class="minibtn" onclick="clearCutList()">全消去</button>
+    </h2>
+    <div id="cutList_field"></div>
+  </div>
+
+  <div class="note">📐 <b>場面</b>: 上下オフセット（立面）／横オフセット（平面・上から見た図）／立て管オフセット／障害物かわし（上越し・下くぐり）。計算はどれもピタゴラス（ズレ÷sinθ・ズレ÷tanθ）。障害物かわしは斜め管2本＋中間水平管を計算（中間管の両端は継手②）。<br>
+  📐 <b>角度不明（実測から逆算）</b>: 芯ズレ・逃げ・斜めのうち<b>直角に測れる2つ</b>を入力すると、残りと角度を逆算。実測角度が規格エルボ（22.5/30/45/60/90°）に近ければヒント表示。<br>
+  ロール入力時は合成ズレ√(H²+ロール²)で計算。継手控除は選んだ系統・呼び径・継手①＋②のZ寸法合計を自動セット（手修正可）。実際の角度と継手の角度が3°以上ズレると警告。</div>
+</div>
+
+<!-- ============ カタログタブ ============ -->
+<div id="viewCat" class="hidden">
+  <div class="card">
+    <h2>規格系統</h2>
+    <div class="chips" id="famChipsCat"></div>
+  </div>
+  <div id="catBody"></div>
+  <div class="note">Z＝芯（基準）からパイプ先端までの寸法 ／ ℓ＝差込み代・ねじ込み代 ／ 芯〜端面＝Z＋ℓ。<br>芯々測定なら「切寸法＝測定値−Z左−Z右」、受口端面どうしなら「切寸法＝測定値＋ℓ左＋ℓ右」。</div>
+</div>
+</main>
+
+<!-- ボトムシート -->
+<div id="sheetBg" onclick="closeSheet()"></div>
+<div id="sheet">
+  <h3 id="sheetTitle">継手を選択</h3>
+  <div class="fitgrid" id="sheetGrid"></div>
+</div>
+
+<!-- 読み合わせモード: 切断リストの行タップで数字を全画面表示 -->
+<div id="readBg" onclick="closeReadout()">
+  <div id="readNo"></div>
+  <div id="readLabel"></div>
+  <div id="readVal"></div>
+  <div id="readNav" onclick="event.stopPropagation()">
+    <button id="readPrev" onclick="readoutStep(-1)">◀ 前</button>
+    <button onclick="closeReadout()">閉じる</button>
+    <button id="readNext" onclick="readoutStep(1)">次 ▶</button>
+  </div>
+  <div id="readHint">数字を声に出して確認してから切る（背景タップで閉じる）</div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   マスタデータ（出典: JIS K6743 / K6739 / B2301 / B2311 / B2220 系の
+   公開寸法表。z = 芯(基準)〜パイプ先端, ins = 差込み代/ねじ込み代）
+   kind: elbow / tee / straight / cap / flange / reducer
+   ===================================================================== */
+const OD = { // パイプ外径 mm
+  vp:  {13:18,16:22,20:26,25:32,30:38,40:48,50:60,65:76,75:89,100:114,125:140,150:165},
+  vu:  {40:48,50:60,65:76,75:89,100:114,125:140,150:165,200:216},
+  stl: {6:10.5,8:13.8,10:17.3,15:21.7,20:27.2,25:34.0,32:42.7,40:48.6,50:60.5,65:76.3,80:89.1,90:101.6,100:114.3,125:139.8,150:165.2,200:216.3}
+};
+
+const FAMILIES = {
+  ts: {
+    name:'TS継手', sub:'水道用塩ビ VP/HI（接着）', od:'vp', pal:'pvc',
+    sizes:[13,16,20,25,30,40,50,65,75,100,125,150],
+    ins:{13:26,16:30,20:35,25:40,30:44,40:55,50:63,65:61,75:64,100:84,125:104,150:132},
+    fits:[
+      {id:'l90', name:'90°エルボ', kind:'elbow', angle:90, glyph:'e90',
+       z:{13:10,16:13,20:15,25:18,30:21,40:27,50:33,65:49,75:56,100:69,125:88,150:98}},
+      {id:'l45', name:'45°エルボ', kind:'elbow', angle:45, glyph:'e45',
+       z:{13:7,20:9,25:11,30:12,40:14,50:17,65:30,75:33,100:38}},
+      {id:'tee', name:'チーズ', kind:'tee', angle:90, glyph:'tee',
+       z:{20:15,25:18,30:21,40:27,50:33,65:49,75:56,100:68,125:86,150:98}},
+      {id:'soc', name:'ソケット', kind:'straight', glyph:'soc',
+       z:{13:2.5,16:3.5,20:3.5,25:3.5,30:3.5,40:3.5,50:3.5,65:11.5,75:13.5,100:16,125:11,150:18}},
+      {id:'cap', name:'キャップ', kind:'cap', glyph:'cap'},   // 全長未収録→端面基準のみ
+      {id:'flg', name:'TSフランジ 10K', kind:'flange', ftype:'socket', glyph:'flg',
+       f:{16:{L:36,Z:6},20:{L:42,Z:7},25:{L:46,Z:6},30:{L:51,Z:7},40:{L:62,Z:7},50:{L:72,Z:9},
+          65:{L:69,Z:8},75:{L:72,Z:8},100:{L:94,Z:10},125:{L:116,Z:12},150:{L:146,Z:14}}},
+      {id:'red', name:'異径ソケット', kind:'reducer', glyph:'red',
+       pairs:{'16x13':{L:61},'20x13':{L:68},'20x16':{L:71},'25x13':{L:86},'25x16':{L:85},'25x20':{L:84},
+              '30x20':{L:93},'30x25':{L:93},'40x20':{L:113},'40x25':{L:114},'40x30':{L:114},
+              '50x25':{L:140},'50x30':{L:136},'50x40':{L:136},'65x50':{L:149},'75x50':{L:165},
+              '75x65':{L:156},'100x75':{L:190},'125x100':{L:230},'150x100':{L:295}}},
+      {id:'rtee', name:'異径チーズ', kind:'rtee', glyph:'rtee',
+       // zr=本管側Z(芯〜管先端), zb=枝側Z
+       pairs:{'20x13':{zr:11,zb:14},'20x16':{zr:13,zb:15},'25x13':{zr:11,zb:17},'25x16':{zr:13,zb:18},
+              '25x20':{zr:15,zb:18},'30x13':{zr:11,zb:20},'30x16':{zr:15,zb:21},'30x20':{zr:15,zb:21},
+              '30x25':{zr:18,zb:21},'40x13':{zr:11,zb:26},'40x16':{zr:13,zb:27},'40x20':{zr:15,zb:27},
+              '40x25':{zr:18,zb:27},'40x30':{zr:21,zb:27},'50x13':{zr:11,zb:32},'50x16':{zr:16,zb:34},
+              '50x20':{zr:15,zb:33},'50x25':{zr:18,zb:33},'50x30':{zr:21,zb:33},'50x40':{zr:27,zb:33},
+              '65x50':{zr:40,zb:41},'75x25':{zr:29,zb:48},'75x40':{zr:36,zb:47},'75x50':{zr:41,zb:47},
+              '75x65':{zr:49,zb:56},'100x50':{zr:41,zb:59},'100x75':{zr:56,zb:68},'125x75':{zr:64,zb:66},
+              '125x100':{zr:73,zb:85},'150x75':{zr:63,zb:94},'150x100':{zr:76,zb:98},'150x125':{zr:87,zb:101}}},
+      {id:'flg5', name:'TSフランジ 5K', kind:'flange', ftype:'socket', glyph:'flg',
+       f:{16:{L:35,Z:5},20:{L:40,Z:5},25:{L:46,Z:6},30:{L:50,Z:6},40:{L:61,Z:6},50:{L:70,Z:7},
+          65:{L:70,Z:9},75:{L:72,Z:8},100:{L:93,Z:9},125:{L:114,Z:10},150:{L:143,Z:11}}},
+      {id:'union', name:'ユニオン (TS式)', kind:'straight', glyph:'union',
+       // z は片側（＝L/2 − ℓ）。エンジンの UNION.z_run は「管に覆われない全長」でその2倍なので
+       // そのまま入れると片側あたり2倍控除になる（50Aで16→正しくは8）
+       z:{13:3,16:4,20:4.5,25:4.5,30:6,40:6,50:8,65:9,75:12,100:18},
+       insOv:{13:18,16:22,20:25,25:29,30:32,40:35,50:38,65:45,75:48,100:58}},
+    ]
+  },
+  dv: {
+    name:'DV継手', sub:'排水用塩ビ VU（接着）', od:'vu', pal:'pvc',
+    sizes:[40,50,65,75,100,125,150,200],
+    ins:{40:22,50:25,65:35,75:40,100:50,125:65,150:80,200:105},
+    fits:[
+      {id:'l90', name:'90°エルボ (DL)', kind:'elbow', angle:90, glyph:'e90',
+       z:{40:27,50:33,65:42,75:48,100:62,125:75,150:88,200:110}},
+      {id:'l45', name:'45°エルボ (45L)', kind:'elbow', angle:45, glyph:'e45',
+       z:{40:14,50:18,65:22,75:25,100:30,125:38,150:44,200:48}},
+      {id:'soc', name:'ソケット (DS)', kind:'straight', glyph:'soc',
+       z:{40:1.5,50:1.5,65:1.5,75:2,100:2.5,125:2.5,150:2.5,200:2.5}},
+      {id:'cap', name:'キャップ', kind:'cap', glyph:'cap'},   // 全長未収録→端面基準のみ
+      {id:'red', name:'インクリーザー', kind:'reducer', glyph:'red',
+       pairs:{'50x40':{L:67},'75x50':{L:90},'75x65':{L:100},'100x50':{L:105},'100x65':{L:115},
+              '100x75':{L:120},'125x100':{L:150},'150x100':{L:170},'150x125':{L:185},
+              '200x125':{L:218},'200x150':{L:235}}},
+      {id:'ll90', name:'大曲エルボ (LL)', kind:'elbow', angle:90, glyph:'e90',
+       z:{40:52,50:66,65:90,75:100,100:128,125:140,150:151}},
+      {id:'tee', name:'90°Y (T分岐)', kind:'tee', angle:90, glyph:'tee',
+       z:{50:34,65:42,75:48,100:62,150:89,200:113}},
+      {id:'rtee', name:'径違い90°Y', kind:'rtee', glyph:'rtee',
+       pairs:{'75x50':{zr:34,zb:48},'100x50':{zr:34,zb:62},'100x75':{zr:48,zb:62},
+              '200x100':{zr:62,zb:116},'200x150':{zr:88,zb:113},'250x200':{zr:116,zb:141}}},
+    ]
+  },
+  neji: {
+    name:'ねじ込み継手', sub:'白/黒 可鍛鋳鉄 JIS B2301', od:'stl', pal:'zinc',
+    sizes:[6,8,10,15,20,25,32,40,50,65,80,100,125,150],
+    ins:{6:6,8:8,10:9,15:11,20:13,25:15,32:17,40:18,50:20,65:23,80:25,100:28,125:30,150:33},
+    fits:[
+      // impact-src: haikan-nejikomi-z-column-error
+      // 2026-08-12 訂正: 90°エルボ／チーズの z は出典表の別列(A列)から作られており過大だった
+      // （100Aで+30mm・150Aで+50mm＝管を短く切る側）。正しくは L列(中心〜端面) − ℓ。
+      // JIS B 2301:2004 表2/表4 の A ＝ 桑名金属PQWK図面(2024-08-01) ＝ 出典表L列 の3ソース一致で確認。
+      // 決め手は 100A で旧z(99) > A(97) となり幾何学的にありえないこと。45°は元から正しい。
+      {id:'l90', name:'90°エルボ', kind:'elbow', angle:90, glyph:'e90',
+       z:{6:11,8:11,10:14,15:16,20:19,25:23,32:29,40:30,50:37,65:46,80:53,100:69,125:83,150:99}},
+      {id:'l45', name:'45°エルボ', kind:'elbow', angle:45, glyph:'e45',
+       z:{6:10,8:9,10:10,15:10,20:12,25:14,32:17,40:19,50:22,65:26,80:29,100:37,125:44,150:49}},
+      {id:'tee', name:'チーズ', kind:'tee', angle:90, glyph:'tee',
+       z:{6:11,8:11,10:14,15:16,20:19,25:23,32:29,40:30,50:37,65:46,80:53,100:69,125:83,150:99}},
+      {id:'rtee', name:'径違いチーズ (RT)', kind:'rtee', glyph:'rtee',
+       // zr=本管側Z(G1), zb=枝側Z(G2)  JIS B2301
+       pairs:{'10x8':{zr:11,zb:14},'15x8':{zr:13,zb:16},'15x10':{zr:15,zb:16},
+              '20x10':{zr:15,zb:19},'20x15':{zr:16,zb:19},
+              '25x8':{zr:15,zb:23},'25x10':{zr:15,zb:22},'25x15':{zr:17,zb:22},'25x20':{zr:19,zb:22},
+              '32x15':{zr:17,zb:27},'32x20':{zr:21,zb:27},'32x25':{zr:23,zb:27},
+              '40x15':{zr:17,zb:31},'40x20':{zr:20,zb:30},'40x25':{zr:23,zb:30},'40x32':{zr:27,zb:31},
+              '50x15':{zr:18,zb:37},'50x20':{zr:21,zb:36},'50x25':{zr:24,zb:36},'50x32':{zr:28,zb:37},'50x40':{zr:32,zb:37},
+              '65x15':{zr:18,zb:46},'65x20':{zr:21,zb:45},'65x25':{zr:25,zb:45},'65x32':{zr:29,zb:45},'65x40':{zr:32,zb:44},'65x50':{zr:37,zb:45},
+              '80x15':{zr:18,zb:54},'80x20':{zr:21,zb:53},'80x25':{zr:25,zb:53},'80x32':{zr:30,zb:53},'80x40':{zr:33,zb:54},'80x50':{zr:37,zb:52},'80x65':{zr:47,zb:52},
+              '100x15':{zr:22,zb:68},'100x20':{zr:26,zb:67},'100x25':{zr:29,zb:68},'100x32':{zr:33,zb:69},'100x40':{zr:35,zb:68},'100x50':{zr:41,zb:67},'100x65':{zr:50,zb:67},'100x80':{zr:55,zb:66},
+              '125x20':{zr:25,zb:83},'125x25':{zr:30,zb:82},'125x32':{zr:32,zb:83},'125x40':{zr:36,zb:82},'125x50':{zr:42,zb:83},'125x65':{zr:51,zb:82},'125x80':{zr:57,zb:82},'125x100':{zr:70,zb:83},
+              '150x20':{zr:27,zb:95},'150x25':{zr:31,zb:95},'150x32':{zr:34,zb:96},'150x40':{zr:37,zb:97},'150x50':{zr:42,zb:96},'150x65':{zr:52,zb:95},'150x80':{zr:59,zb:95},'150x100':{zr:69,zb:97},'150x125':{zr:83,zb:98}}},
+      {id:'soc', name:'ソケット (S)', kind:'straight', glyph:'soc',
+       z:{6:5,8:4.5,10:6,15:6.5,20:7,25:7.5,32:8,40:9.5,50:10,65:12,80:12.5,100:14.5,125:17.5,150:19.5}},
+      {id:'cap', name:'キャップ (Ca)', kind:'cap', glyph:'cap',
+       capL:{10:17,15:20,20:24,25:28,32:30,40:32,50:36,65:42,80:45,100:55,125:58,150:65}},
+      {id:'flg', name:'組みフランジ 10K', kind:'flange', ftype:'thread', glyph:'flg',
+       f:{15:{T:13,E:10},20:{T:15,E:12},25:{T:17,E:14},32:{T:19,E:16},40:{T:20,E:17},
+          50:{T:24,E:21},65:{T:27,E:23},80:{T:30,E:26},100:{T:36,E:32},125:{T:40,E:36},150:{T:40,E:36}}},
+      {id:'bush', name:'ブッシング（異径）', kind:'reducer', smallOnly:true, noFar:true, glyph:'bush',
+       pairs:{'8x6':{L:17,ins:6},'10x8':{L:18,ins:8},'15x10':{L:21,ins:9},'20x15':{L:24,ins:11},
+              '25x20':{L:27,ins:13},'32x25':{L:30,ins:15},'40x32':{L:32,ins:17},
+              '50x40':{L:36,ins:18},'65x50':{L:39,ins:20}}},
+    ]
+  },
+  weld: {
+    name:'突合せ溶接式', sub:'鋼管用 JIS B2311（BW）', od:'stl', pal:'steel',
+    sizes:[15,20,25,32,40,50,65,80,90,100,125,150,200],
+    ins:null, // 突合せ: 差込みなし
+    fits:[
+      {id:'l90', name:'90°エルボ ロング', kind:'elbow', angle:90, glyph:'e90',
+       z:{15:38.1,20:38.1,25:38.1,32:47.6,40:57.2,50:76.2,65:95.3,80:114.3,100:152.4,125:190.5,150:228.6,200:304.8}},
+      {id:'s90', name:'90°エルボ ショート', kind:'elbow', angle:90, glyph:'e90',
+       z:{25:25.4,32:31.8,40:38.1,50:50.8,65:63.5,80:76.2,100:101.6,125:127,150:152.4,200:203.2}},
+      {id:'l45', name:'45°エルボ', kind:'elbow', angle:45, glyph:'e45',
+       z:{15:15.8,20:15.8,25:15.8,32:19.7,40:23.7,50:31.6,65:39.5,80:47.3,90:55.3,100:63.1,125:78.9,150:94.7,200:126.3}},
+      {id:'tee', name:'チーズ', kind:'tee', angle:90, glyph:'tee',
+       z:{15:25.4,20:28.6,25:38.1,32:47.6,40:57.2,50:63.5,65:76.2,80:85.7,90:95.3,100:104.8,125:123.8,150:142.9,200:177.8}},
+      {id:'cap', name:'キャップ', kind:'cap', glyph:'cap',
+       capL:{15:25.4,20:25.4,25:38.1,32:38.1,40:38.1,50:38.1,65:38.1,80:50.8,90:63.5,100:63.5,125:76.2,150:88.9,200:101.6}},
+      {id:'cr', name:'CR 同心レデューサー', kind:'reducer', glyph:'red',
+       Hbig:{20:38.1,25:50.8,32:50.8,40:63.5,50:76.2,65:88.9,80:88.9,90:101.6,100:101.6,125:127,150:139.7,200:152.4}},
+      {id:'er', name:'ER 偏心レデューサー', kind:'reducer', glyph:'er',
+       Hbig:{20:38.1,25:50.8,32:50.8,40:63.5,50:76.2,65:88.9,80:88.9,90:101.6,100:101.6,125:127,150:139.7,200:152.4}},
+      {id:'flg', name:'溶接フランジ (面一)', kind:'flange', ftype:'weld', glyph:'flg',
+       f:{15:{T:0,E:0},20:{T:0,E:0},25:{T:0,E:0},32:{T:0,E:0},40:{T:0,E:0},50:{T:0,E:0},
+          65:{T:0,E:0},80:{T:0,E:0},90:{T:0,E:0},100:{T:0,E:0},125:{T:0,E:0},150:{T:0,E:0},
+          200:{T:0,E:0},250:{T:0,E:0},300:{T:0,E:0}}},
+    ]
+  }
+};
+
+const NONE_FIT = {id:'none', name:'なし（パイプ端）', kind:'none', glyph:'none'};
+const CUSTOM_FIT = {id:'custom', name:'カスタム寸法', kind:'custom', glyph:'cust'};
+
+const REF_DEFS = {
+  outer: {label:'パイプ外側'},
+  center:{label:'継手の芯'},
+  inner: {label:'パイプ内側'},
+  face:  {label:'継手の端面'},
+  end:   {label:'パイプ端'},
+  top:   {label:'キャップ外面'},
+  fface: {label:'フランジ面'},
+  fback: {label:'差込み口(背面)'},
+  rfar:  {label:'反対側の端面'},
+};
+
+/* ============================ 状態 ============================ */
+let st = {
+  fam:'ts', size:20,
+  L:{fit:'l90', ref:'center', other:null},
+  R:{fit:'l90', ref:'center', other:null},
+  measured:null,
+};
+try{ const s = JSON.parse(localStorage.getItem('pipeCutCalc_v2')); if(s&&s.fam) st = Object.assign(st,s);}catch(e){}
+function save(){ try{ localStorage.setItem('pipeCutCalc_v2', JSON.stringify(st)); }catch(e){} }
+
+/* ============================ ヘルパ ============================ */
+function fam(){ return FAMILIES[st.fam]; }
+function getFit(side){
+  const id = st[side].fit;
+  if(id==='none') return NONE_FIT;
+  if(id==='custom') return CUSTOM_FIT;
+  return fam().fits.find(f=>f.id===id) || NONE_FIT;
+}
+function famIns(size, fit){
+  if(fit && fit.insOv && fit.insOv[size]!=null) return fit.insOv[size];
+  return fam().ins ? (fam().ins[size] ?? 0) : 0;
+}
+function fmt(n){
+  const r = Math.round(n*10)/10;
+  return (r%1===0) ? String(r) : r.toFixed(1);
+}
+// 異径継手: 現在のパイプ径に対する相手側口径の候補
+function partnersFor(fit, size){
+  if(fit.pairs){
+    const out=[];
+    for(const k of Object.keys(fit.pairs)){
+      const [b,s]=k.split('x').map(Number);
+      if(fit.smallOnly){ if(s===size) out.push(b); }
+      else { if(b===size) out.push(s); else if(s===size) out.push(b); }
+    }
+    return [...new Set(out)].sort((a,b)=>a-b);
+  }
+  if(fit.Hbig){
+    return fam().sizes.filter(o=>o!==size && fit.Hbig[Math.max(o,size)]!==undefined);
+  }
+  return [];
+}
+// 継手がこのパイプ径に対応しているか
+function supportsSize(fit, size){
+  switch(fit.kind){
+    case 'none': case 'custom': return true;
+    case 'cap':
+      if(fit.capL) return fit.capL[size]!==undefined;
+      return fam().ins ? fam().ins[size]!==undefined : false;
+    case 'flange': return fit.f[size]!==undefined;
+    case 'reducer': case 'rtee': return partnersFor(fit,size).length>0;
+    default: return fit.z[size]!==undefined;
+  }
+}
+// 有効な基準点一覧
+function refsFor(fit){
+  switch(fit.kind){
+    case 'none': return ['end'];
+    case 'custom': return ['center','face'];
+    case 'cap': return fit.capL ? ['face','top'] : ['face'];
+    case 'flange': return ['fface','fback'];
+    case 'reducer': return fit.noFar ? ['face'] : ['face','rfar'];
+    case 'rtee': return ['outer','center','inner','face'];
+    case 'straight': return ['center','face'];
+    default: // elbow / tee
+      return st.fam==='weld' ? ['center','face'] : ['outer','center','inner','face'];
+  }
+}
+// 異径継手の寸法解決 {L:全長, insP:接続口の差込み代} / 不成立ならnull
+function reducerDims(fit, size, other){
+  if(!other) return null;
+  if(fit.pairs){
+    const b=Math.max(size,other), s=Math.min(size,other);
+    const p=fit.pairs[b+'x'+s];
+    if(!p) return null;
+    if(fit.smallOnly && size!==s) return null;      // ブッシングは小径側のみ
+    return {L:p.L, insP: fit.smallOnly ? p.ins : famIns(size, fit)};
+  }
+  if(fit.Hbig){
+    const H=fit.Hbig[Math.max(size,other)];
+    return H===undefined ? null : {L:H, insP:0};
+  }
+  return null;
+}
+// 控除量 a: 測定基準点→パイプ先端（外側向き正）。切寸法 = 測定値 − aL − aR
+function deduction(side){
+  const fit=getFit(side), size=st.size, ref=st[side].ref;
+  const od=OD[fam().od][size]||0;
+  const info={fit, lines:[]};
+  const bad=(msg)=>{ info.a=NaN; info.err=msg; return info; };
+  switch(fit.kind){
+    case 'none': info.a=0; info.lines.push('控除なし'); return info;
+    case 'custom': {
+      const aa=parseFloat(document.getElementById('cust'+side+'_a')?.value)||0;
+      const ii=parseFloat(document.getElementById('cust'+side+'_i')?.value)||0;
+      const z=aa-ii;
+      info.a = (ref==='face') ? -ii : z;
+      info.lines.push(`芯〜端面: ${fmt(aa)}mm`,`差込/ねじ代: ${fmt(ii)}mm`);
+      return info;
+    }
+    case 'cap': {
+      const ins = fit.capL ? famIns(size, fit) : famIns(size, fit); // weldはins=0(fam().ins=null→0)
+      const insV = fam().ins ? ins : 0;
+      if(ref==='top'){
+        if(!fit.capL || fit.capL[size]===undefined) return bad('全長データなし');
+        info.a = fit.capL[size] - insV;
+        info.lines.push(`全長: ${fmt(fit.capL[size])}mm`);
+      } else {
+        info.a = -insV;
+      }
+      if(insV>0) info.lines.push(`差込/ねじ代: ${fmt(insV)}mm`);
+      if(st.fam==='weld') info.lines.push('突合せ(差込みなし)');
+      return info;
+    }
+    case 'flange': {
+      const d=fit.f[size];
+      if(!d) return bad('この径のデータなし');
+      if(fit.ftype==='socket'){ // TSフランジ: L=全高, Z=面〜管先端
+        info.a = (ref==='fface') ? d.Z : -(d.L-d.Z);
+        info.lines.push(`面〜管先端: ${fmt(d.Z)}mm`,`差込み代: ${fmt(d.L-d.Z)}mm`);
+      } else { // ねじ込みフランジ: T=厚, E=ねじ込み代
+        info.a = (ref==='fface') ? (d.T-d.E) : -d.E;
+        info.lines.push(`面〜管先端: ${fmt(d.T-d.E)}mm`,`ねじ込み代: ${fmt(d.E)}mm`);
+      }
+      return info;
+    }
+    case 'reducer': {
+      const rd=reducerDims(fit, size, st[side].other);
+      if(!rd) return bad('相手側口径を選択してください');
+      info.a = (ref==='rfar') ? (rd.L - rd.insP) : -rd.insP;
+      info.lines.push(`${st.size}A×${st[side].other}A 全長: ${fmt(rd.L)}mm`);
+      if(rd.insP>0) info.lines.push(`差込/ねじ代: ${fmt(rd.insP)}mm`);
+      return info;
+    }
+    case 'rtee': {
+      const other=st[side].other;
+      if(!other) return bad('相手側口径を選択してください');
+      let z, role;
+      if(fit.pairs[size+'x'+other]){ z=fit.pairs[size+'x'+other].zr; role='本管側'; }
+      else if(fit.pairs[other+'x'+size]){ z=fit.pairs[other+'x'+size].zb; role='枝側'; }
+      else return bad('この組合せのデータなし');
+      const ins=famIns(size, fit);
+      const odX=OD[fam().od][other]||0;  // 交差する相手管の外径
+      switch(ref){
+        case 'center': info.a=z; break;
+        case 'face':   info.a=-ins; break;
+        case 'outer':  info.a=z+odX/2; break;
+        case 'inner':  info.a=z-odX/2; break;
+        default: info.a=z;
+      }
+      info.lines.push(`${role}に接続 (${Math.max(size,other)}×${Math.min(size,other)})`,`Z(芯〜管先端): ${fmt(z)}mm`);
+      if(ins>0) info.lines.push(`差込/ねじ代: ${fmt(ins)}mm`);
+      return info;
+    }
+    default: { // elbow / tee / straight
+      const z=fit.z[size];
+      if(z===undefined) return bad('この径のデータなし');
+      const ins=famIns(size, fit);
+      const k = fit.angle===45 ? Math.SQRT2 : 1; // 45°は交差管面まで√2倍
+      switch(ref){
+        case 'center': info.a=z; break;
+        case 'face':   info.a=-ins; break;
+        case 'outer':  info.a=z+(od/2)*k; break;
+        case 'inner':  info.a=z-(od/2)*k; break;
+        default: info.a=z;
+      }
+      info.lines.push(`Z(芯〜管先端): ${fmt(z)}mm`);
+      if(ins>0) info.lines.push(`差込/ねじ代: ${fmt(ins)}mm`);
+      return info;
+    }
+  }
+}
+
+/* ============================ 継手アイコンSVG（リアル描画） ============================ */
+let GID=0;
+// 円筒シェーディング: 上下方向グラデ（vert=false で左右方向 = 縦向き部材用）
+function cylGrad(light, dark, vert){
+  const id='pg'+(++GID);
+  const dirAttr = vert ? 'x1="0" y1="0" x2="0" y2="1"' : 'x1="0" y1="0" x2="1" y2="0"';
+  return {id, def:`<linearGradient id="${id}" ${dirAttr}>
+    <stop offset="0" stop-color="${dark}"/><stop offset="0.28" stop-color="${light}"/>
+    <stop offset="0.5" stop-color="#ffffff"/><stop offset="0.62" stop-color="${light}"/>
+    <stop offset="1" stop-color="${dark}"/></linearGradient>`};
+}
+const PALETTES = {
+  pvc:  {light:'#b9c4cd', dark:'#5f6d7a', stroke:'#46525d', pipe:'#c7ced4', pipeDark:'#8a949d'},
+  zinc: {light:'#e8ecef', dark:'#8d979f', stroke:'#5f6a72', pipe:'#d5dade', pipeDark:'#98a1a8'},
+  steel:{light:'#8f9aa5', dark:'#39434d', stroke:'#242c34', pipe:'#a9b2ba', pipeDark:'#5c6670'},
+};
+/* 各グリフは viewBox 0 0 84 64。パイプ軸 y=44。開口（パイプ接続側）は右向き。 */
+function glyphSVG(g, mirror, palName){
+  const P = PALETTES[palName||'pvc'];
+  const gh = cylGrad(P.light,P.dark,true);   // 横向き部材
+  const gv = cylGrad(P.light,P.dark,false);  // 縦向き部材
+  const gp = cylGrad(P.pipe,P.pipeDark,true);  // パイプ(横)
+  const gpv = cylGrad(P.pipe,P.pipeDark,false);// パイプ(縦)
+  const defs = `<defs>${gh.def}${gv.def}${gp.def}${gpv.def}</defs>`;
+  const S = `stroke="${P.stroke}" stroke-width="1.6"`;
+  const H = `fill="url(#${gh.id})" ${S}`;   // 継手ボディ横
+  const V = `fill="url(#${gv.id})" ${S}`;   // 継手ボディ縦
+  const isZinc = palName==='zinc';
+  // 受口ベル（横向き, 右端が開口）: x=左端
+  const bellH=(x,y,w,h)=>{
+    let r=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ${H}/>`;
+    r+=`<rect x="${x+w-3.5}" y="${y}" width="3.5" height="${h}" rx="1.5" fill="${P.dark}" opacity="0.55"/>`; // 開口の影
+    if(isZinc) r+=`<line x1="${x+4}" y1="${y}" x2="${x+4}" y2="${y+h}" stroke="${P.stroke}" stroke-width="1" opacity="0.5"/><line x1="${x+8}" y1="${y}" x2="${x+8}" y2="${y+h}" stroke="${P.stroke}" stroke-width="1" opacity="0.5"/>`; // 鋳物リブ
+    return r;
+  };
+  const bellV=(x,y,w,h)=>{ // 縦向き, 上端が開口
+    let r=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" ${V}/>`;
+    r+=`<rect x="${x}" y="${y}" width="${w}" height="3.5" rx="1.5" fill="${P.dark}" opacity="0.55"/>`;
+    if(isZinc) r+=`<line x1="${x}" y1="${y+h-4}" x2="${x+w}" y2="${y+h-4}" stroke="${P.stroke}" stroke-width="1" opacity="0.5"/>`;
+    return r;
+  };
+  const weldEnd=(x,y,h)=>`<line x1="${x}" y1="${y}" x2="${x}" y2="${y+h}" stroke="#e8b34a" stroke-width="2" opacity="0.9"/>`; // 開先(ベベル)ライン
+  const isWeld = palName==='steel';
+  let body='';
+  switch(g){
+    case 'e90': // 90°エルボ: 縦上ポート + 横右ポート
+      if(isWeld){
+        body=`<path d="M 30 6 L 30 24 Q 30 44 50 44 L 76 44" fill="none" stroke="${P.stroke}" stroke-width="23" stroke-linecap="butt"/>
+              <path d="M 30 6 L 30 24 Q 30 44 50 44 L 76 44" fill="none" stroke="url(#${gh.id})" stroke-width="20" stroke-linecap="butt"/>
+              ${weldEnd(76,34,20)}<line x1="20" y1="6" x2="40" y2="6" stroke="#e8b34a" stroke-width="2"/>`;
+      } else {
+        body=`<rect x="24" y="20" width="12" height="14" fill="url(#${gpv.id})" stroke="${P.pipeDark}" stroke-width="1"/>
+              <path d="M 18 24 L 18 34 Q 18 56 40 56 L 50 56 L 50 32 Q 42 32 42 24 Z" ${H}/>
+              ${bellV(16,4,28,20)}${bellH(48,30,30,26)}`;
+      }
+      break;
+    case 'e45': // 45°エルボ: 斜め上(左)ポート + 横右ポート
+      if(isWeld){
+        body=`<path d="M 76 44 L 56 44 Q 46 44 39 37 L 21 19" fill="none" stroke="${P.stroke}" stroke-width="21" stroke-linecap="butt"/>
+              <path d="M 76 44 L 56 44 Q 46 44 39 37 L 21 19" fill="none" stroke="url(#${gh.id})" stroke-width="18" stroke-linecap="butt"/>
+              ${weldEnd(76,35,18)}
+              <line x1="14.4" y1="25.6" x2="27.6" y2="12.4" stroke="#e8b34a" stroke-width="2"/>`;
+      } else {
+        body=`<path d="M 44 46 L 24 26" stroke="${P.stroke}" stroke-width="23" stroke-linecap="butt" fill="none"/>
+              <path d="M 44 46 L 24 26" stroke="url(#${gh.id})" stroke-width="20" stroke-linecap="butt" fill="none"/>
+              <g transform="translate(18,20) rotate(45)">
+                <rect x="-16" y="-13" width="28" height="26" rx="3" ${H}/>
+                <rect x="-16" y="-13" width="3.5" height="26" rx="1.5" fill="${P.dark}" opacity="0.55"/>
+                ${isZinc?`<line x1="-9" y1="-13" x2="-9" y2="13" stroke="${P.stroke}" stroke-width="1" opacity="0.5"/>`:''}
+              </g>
+              <rect x="36" y="33" width="14" height="22" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.4"/>
+              ${bellH(48,32,28,24)}`;
+      }
+      break;
+    case 'tee': // チーズ: 左右横ポート + 上ポート
+      if(isWeld){
+        body=`<rect x="6" y="34" width="72" height="20" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.6"/>
+              <path d="M 32 34 L 32 10 L 52 10 L 52 34" fill="url(#${gv.id})" stroke="${P.stroke}" stroke-width="1.6"/>
+              ${weldEnd(6,34,20)}${weldEnd(78,34,20)}<line x1="32" y1="10" x2="52" y2="10" stroke="#e8b34a" stroke-width="2"/>`;
+      } else {
+        body=`<rect x="10" y="36" width="64" height="18" ${H}/>
+              <rect x="34" y="18" width="16" height="20" fill="url(#${gv.id})" stroke="${P.stroke}" stroke-width="1.2"/>
+              ${bellV(30,4,24,18)}
+              <g transform="scale(-1,1) translate(-84,0)">${bellH(52,32,26,26)}</g>
+              ${bellH(52,32,26,26)}`;
+      }
+      break;
+    case 'rtee': // 異径チーズ: 本管 + 細い枝
+      body=`<rect x="10" y="36" width="64" height="18" ${H}/>
+            <rect x="36" y="22" width="12" height="18" fill="url(#${gv.id})" stroke="${P.stroke}" stroke-width="1.2"/>
+            ${bellV(33,10,18,14)}
+            <g transform="scale(-1,1) translate(-84,0)">${bellH(52,32,26,26)}</g>
+            ${bellH(52,32,26,26)}`;
+      break;
+    case 'soc': // ソケット
+      if(isWeld){
+        body=`<rect x="12" y="33" width="60" height="22" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.6"/>${weldEnd(12,33,22)}${weldEnd(72,33,22)}`;
+      } else {
+        body=`<g transform="scale(-1,1) translate(-84,0)">${bellH(46,31,28,26)}</g>
+              ${bellH(46,31,28,26)}
+              <rect x="36" y="29" width="12" height="30" rx="2" ${H}/>`;
+      }
+      break;
+    case 'union': // ユニオン: 受口2つ + 中央の袋ナット（ナットが見分けどころ。ソケットと絵を分ける）
+      body=`<g transform="scale(-1,1) translate(-84,0)">${bellH(52,33,22,22)}</g>
+            ${bellH(52,33,22,22)}
+            <path d="M 35 24 L 49 24 L 53 29 L 53 59 L 49 64 L 35 64 L 31 59 L 31 29 Z" ${H}/>
+            <line x1="38" y1="24" x2="38" y2="64" stroke="${P.stroke}" stroke-width="1" opacity="0.5"/>
+            <line x1="46" y1="24" x2="46" y2="64" stroke="${P.stroke}" stroke-width="1" opacity="0.5"/>`;
+      break;
+    case 'cap': // キャップ: 左=閉止ドーム, 右=開口
+      if(isWeld){
+        body=`<path d="M 70 30 L 40 30 Q 18 30 18 44 Q 18 58 40 58 L 70 58 Z" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.6"/>
+              ${weldEnd(70,30,28)}`;
+      } else {
+        body=`<path d="M 44 28 L 32 28 Q 14 28 14 44 Q 14 60 32 60 L 44 60 Z" ${H}/>
+              ${bellH(42,28,30,32)}`;
+      }
+      break;
+    case 'flg': { // フランジ側面: ガスケット面 + 円盤 + ハブ + 受口/ねじ口（軸 y=34）
+      // ガスケット面 + 円盤(ボルト穴) + まっすぐなハブ + 受口。
+      // 旧版はハブが遠近法の台形で、何の部材か読めなかった（2026-08-13）
+      body=`<rect x="14" y="13" width="6" height="42" rx="2" fill="url(#${gv.id})" stroke="${P.stroke}" stroke-width="1.4"/>
+            <rect x="20" y="5" width="16" height="58" rx="2" fill="url(#${gv.id})" stroke="${P.stroke}" stroke-width="1.6"/>
+            <rect x="22" y="10" width="12" height="6" rx="2" fill="${P.dark}" opacity="0.6"/>
+            <rect x="22" y="52" width="12" height="6" rx="2" fill="${P.dark}" opacity="0.6"/>
+            <rect x="36" y="24" width="14" height="20" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.4"/>
+            ${bellH(48,22,28,24)}`;
+      break;
+    }
+    case 'red': // 同心レデューサー / 異径ソケット: 左=大, 右=小
+      if(isWeld){
+        body=`<path d="M 10 26 L 30 26 L 62 36 L 76 36 L 76 52 L 62 52 L 30 62 L 10 62 Z" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.6"/>
+              ${weldEnd(10,26,36)}${weldEnd(76,36,16)}`;
+      } else {
+        body=`<g transform="scale(-1,1) translate(-84,0)">${bellH(60,24,24,40)}</g>
+              <path d="M 26 26 L 44 32 L 44 56 L 26 62 Z" ${H}/>
+              ${bellH(42,32,32,24)}`;
+      }
+      break;
+    case 'er': // 偏心レデューサー: 底面フラット
+      body=`<path d="M 8 24 L 26 24 L 58 40 L 76 40 L 76 58 L 8 58 Z" fill="url(#${gh.id})" stroke="${P.stroke}" stroke-width="1.6"/>
+            ${weldEnd(8,24,34)}${weldEnd(76,40,18)}
+            <line x1="8" y1="58" x2="76" y2="58" stroke="${P.stroke}" stroke-width="2"/>`;
+      break;
+    case 'bush': { // ブッシング: 六角 + おねじ
+      const thr=[];
+      for(let x=56;x<=72;x+=4) thr.push(`<line x1="${x}" y1="32" x2="${x}" y2="56" stroke="${P.stroke}" stroke-width="1" opacity="0.65"/>`);
+      body=`<rect x="54" y="30" width="20" height="28" rx="2" ${H}/>${thr.join('')}
+            <rect x="22" y="24" width="32" height="40" rx="3" ${V}/>
+            <line x1="22" y1="37" x2="54" y2="37" stroke="${P.stroke}" stroke-width="1" opacity="0.6"/>
+            <line x1="22" y1="51" x2="54" y2="51" stroke="${P.stroke}" stroke-width="1" opacity="0.6"/>
+            <rect x="14" y="32" width="9" height="24" rx="1.5" fill="${P.dark}" opacity="0.8"/>`;
+      break;
+    }
+    case 'none':
+      body=`<rect x="8" y="34" width="52" height="20" fill="url(#${gp.id})" stroke="${P.pipeDark}" stroke-width="1.4"/>
+            <line x1="62" y1="24" x2="62" y2="62" stroke="#dc2626" stroke-width="3"/>`;
+      break;
+    case 'cust':
+      body=`<rect x="14" y="26" width="56" height="30" rx="5" fill="#fef3c7" stroke="#b45309" stroke-width="2.5" stroke-dasharray="5 3"/>
+            <text x="42" y="48" font-size="18" text-anchor="middle" fill="#b45309" font-weight="bold">?</text>`;
+      break;
+  }
+  const sc = mirror ? `transform="scale(-1,1) translate(-84,0)"` : '';
+  return `<svg viewBox="0 0 84 64" xmlns="http://www.w3.org/2000/svg">${defs}<g ${sc}>${body}</g></svg>`;
+}
+
+/* ============================ メイン図 ============================ */
+function drawDiagram(){
+  const svg=document.getElementById('diagram');
+  const cy=95, cxL=70, cxR=290;
+  const fL=getFit('L'), fR=getFit('R');
+
+  function refOffsetPx(ref){
+    switch(ref){
+      case 'outer': return 26;
+      case 'inner': return -26;
+      case 'face': return -34;
+      case 'fface': return 8;
+      case 'fback': return -12;
+      case 'top': return 34;
+      case 'rfar': return 34;
+      default: return 0; // center / end
+    }
+  }
+  const xLpt = cxL - refOffsetPx(st.L.ref);
+  const xRpt = cxR + refOffsetPx(st.R.ref);
+
+  function fitShape(side, fit){
+    const cx = side==='L'?cxL:cxR;
+    const dir = side==='L'?1:-1; // パイプ（中央）方向
+    const g=[];
+    const B='fill="#dbeafe" stroke="#2563eb" stroke-width="2.5"';
+    if(fit.kind==='none'){
+      g.push(`<line x1="${cx}" y1="${cy-16}" x2="${cx}" y2="${cy+16}" stroke="#dc2626" stroke-width="3"/>`);
+      return g.join('');
+    }
+    const bx = dir>0 ? cx-14 : cx-36; // 横ボディ
+    switch(fit.kind){
+      case 'cap':
+        g.push(`<path d="M ${cx-dir*30} ${cy-13} Q ${cx-dir*42} ${cy} ${cx-dir*30} ${cy+13} L ${cx+dir*16} ${cy+13} L ${cx+dir*16} ${cy-13} Z" ${B}/>`);
+        break;
+      case 'flange':
+        g.push(`<rect x="${cx-7}" y="${cy-42}" width="14" height="84" rx="3" ${B}/>`);
+        g.push(`<rect x="${dir>0?cx+5:cx-23}" y="${cy-12}" width="18" height="24" ${B}/>`);
+        break;
+      case 'reducer': {
+        const big = st[side].other && st[side].other>st.size;
+        // 接続口(中央側)=パイプ径, 反対側=相手径
+        const hNear=12, hFar= big?20:8;
+        g.push(`<path d="M ${cx+dir*16} ${cy-hNear} L ${cx-dir*10} ${cy-hFar} L ${cx-dir*34} ${cy-hFar} L ${cx-dir*34} ${cy+hFar} L ${cx-dir*10} ${cy+hFar} L ${cx+dir*16} ${cy+hNear} Z" ${B}/>`);
+        break;
+      }
+      default: {
+        // 実物の形で描く: 90°エルボ=L字 / チーズ=T字 / 45°=斜め腕。
+        // 旧版は「青い角丸箱＋灰色の棒」で何の継手か読めなかった（2026-08-13）
+        if(fit.kind==='elbow'&&fit.angle===45){
+          g.push(`<rect x="${bx}" y="${cy-14}" width="50" height="28" rx="5" ${B}/>`);
+          g.push(`<path d="M${cx} ${cy} l${-dir*30} -30" stroke="#2563eb" stroke-width="18" fill="none"/>`);
+          g.push(`<path d="M${cx} ${cy} l${-dir*30} -30" stroke="#dbeafe" stroke-width="13" fill="none"/>`);
+        } else if(fit.kind==='elbow'){
+          g.push(`<path d="M ${cx-dir*14} ${cy-52} L ${cx+dir*14} ${cy-52} L ${cx+dir*14} ${cy-14} L ${cx+dir*30} ${cy-14} L ${cx+dir*30} ${cy+14} L ${cx-dir*14} ${cy+14} Z" ${B}/>`);
+          g.push(`<rect x="${cx-17}" y="${cy-58}" width="34" height="8" rx="3" ${B}/>`);
+        } else if(fit.kind==='tee'||fit.kind==='rtee'){
+          let bw=11;
+          if(fit.kind==='rtee'){
+            const branchBig = st[side].other && st[side].other>st.size;
+            bw = branchBig ? 16 : 7; // 枝が太い=枝側接続, 細い=本管側接続
+          }
+          g.push(`<path d="M ${cx-25} ${cy-14} L ${cx-bw} ${cy-14} L ${cx-bw} ${cy-50} L ${cx+bw} ${cy-50} L ${cx+bw} ${cy-14} L ${cx+25} ${cy-14} L ${cx+25} ${cy+14} L ${cx-25} ${cy+14} Z" ${B}/>`);
+          g.push(`<rect x="${cx-bw-4}" y="${cy-56}" width="${2*bw+8}" height="8" rx="3" ${B}/>`);
+        } else {
+          g.push(`<rect x="${bx}" y="${cy-14}" width="50" height="28" rx="5" ${B}/>`);
+        }
+      }
+    }
+    g.push(`<line x1="${cx}" y1="${cy-20}" x2="${cx}" y2="${cy+20}" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 3"/>`);
+    return g.join('');
+  }
+
+  const pipe = `<rect x="${cxL+8}" y="${cy-9}" width="${cxR-cxL-16}" height="18" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+    <text x="${(cxL+cxR)/2}" y="${cy+4}" font-size="12" text-anchor="middle" fill="#64748b">切るパイプ ${st.size}A</text>`;
+
+  const dimY=28;
+  const dim = `
+    <line x1="${xLpt}" y1="${dimY}" x2="${xRpt}" y2="${dimY}" stroke="#dc2626" stroke-width="2"/>
+    <line x1="${xLpt}" y1="${dimY-7}" x2="${xLpt}" y2="${cy}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <line x1="${xRpt}" y1="${dimY-7}" x2="${xRpt}" y2="${cy}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <circle cx="${xLpt}" cy="${dimY}" r="5" fill="#fff" stroke="#dc2626" stroke-width="2.5"/>
+    <circle cx="${xRpt}" cy="${dimY}" r="5" fill="#fff" stroke="#dc2626" stroke-width="2.5"/>
+    <text x="${(xLpt+xRpt)/2}" y="${dimY-8}" font-size="13" font-weight="bold" text-anchor="middle" fill="#dc2626">測定値 ${st.measured?fmt(st.measured):'?'} mm</text>
+    <text x="${xLpt}" y="${dimY+20}" font-size="12" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.L.ref].label}</text>
+    <text x="${xRpt}" y="${dimY+20}" font-size="12" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.R.ref].label}</text>`;
+
+  svg.innerHTML = fitShape('L',fL) + fitShape('R',fR) + pipe + dim;
+}
+
+/* ============================ UI描画 ============================ */
+function renderFamChips(){
+  for(const target of ['famChips','famChipsCat']){
+    const el=document.getElementById(target);
+    el.innerHTML = Object.entries(FAMILIES).map(([k,f])=>
+      `<button class="chip ${st.fam===k?'on':''}" onclick="setFam('${k}')">${f.name}<br><span style="font-size:12px;font-weight:400">${f.sub}</span></button>`
+    ).join('');
+  }
+}
+function setFam(k){
+  st.fam=k;
+  const f=FAMILIES[k];
+  if(!f.sizes.includes(st.size)) st.size = f.sizes.includes(50)?50:f.sizes[0];
+  for(const s of ['L','R']){
+    const fit=getFit(s);
+    if(fit.id!=='none' && fit.id!=='custom' && !f.fits.find(x=>x.id===fit.id)) st[s].fit=f.fits[0].id;
+  }
+  renderAll();
+}
+function renderSizes(){
+  const el=document.getElementById('sizeChips');
+  const fL=getFit('L'), fR=getFit('R');
+  el.innerHTML = fam().sizes.map(sz=>{
+    const ok = supportsSize(fL,sz) && supportsSize(fR,sz);
+    return `<button class="chip ${st.size===sz?'on':''}" ${ok?'':'disabled'} onclick="st.size=${sz};renderAll()">${sz}A</button>`;
+  }).join('');
+}
+function renderPartners(){
+  for(const s of ['L','R']){
+    const el=document.getElementById('partner'+s);
+    const fit=getFit(s);
+    if(fit.kind!=='reducer' && fit.kind!=='rtee'){ el.classList.add('hidden'); st[s].other=null; continue; }
+    const ps=partnersFor(fit, st.size);
+    if(!ps.includes(st[s].other)) st[s].other = ps[0] ?? null;
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="plabel">${s==='L'?'左':'右'} ${fit.name} の反対側口径${fit.smallOnly?'（パイプは小径側に接続）':''}</div>
+      <div class="chips">${ps.map(p=>`<button class="chip ${st[s].other===p?'on':''}" onclick="st['${s}'].other=${p};renderAll()">${p}A</button>`).join('')}</div>`;
+  }
+}
+function renderPicks(){
+  for(const s of ['L','R']){
+    const fit=getFit(s);
+    document.getElementById('name'+s).textContent=fit.name;
+    document.getElementById('icon'+s).innerHTML=glyphSVG(fit.glyph, s==='L', fam().pal);
+    document.getElementById('cust'+s).classList.toggle('hidden', fit.id!=='custom');
+  }
+}
+function renderRefs(){
+  for(const s of ['L','R']){
+    const el=document.getElementById('ref'+s);
+    const avail=refsFor(getFit(s));
+    if(!avail.includes(st[s].ref)) st[s].ref=avail.includes('center')?'center':avail[0];
+    const order=['outer','center','inner','face','fface','fback','top','rfar','end'];
+    el.innerHTML = order.filter(r=>avail.includes(r)).map(r=>
+      `<button class="${st[s].ref===r?'on':''}" onclick="st['${s}'].ref='${r}';renderAll()">${REF_DEFS[r].label}</button>`
+    ).join('');
+  }
+}
+function calc(){
+  st.measured = parseFloat(document.getElementById('measured').value);
+  const out=document.getElementById('cutVal'), fm=document.getElementById('formula'), dt=document.getElementById('detail');
+  const dL=deduction('L'), dR=deduction('R');
+
+  // ルート間隔（溶接系統のみ表示・空欄=0）: 溶接する端（継手なし以外）の数だけ引く
+  const rgCard=document.getElementById('rootGapCard');
+  if(rgCard) rgCard.classList.toggle('hidden', st.fam!=='weld');
+  let rootG=0, rootEnds=0;
+  if(st.fam==='weld'){
+    const g=parseFloat(document.getElementById('rootGap')?.value);
+    if(!isNaN(g)&&g>0){
+      rootEnds=['L','R'].filter(s=>getFit(s).kind!=='none').length;
+      rootG=g*rootEnds;
+    }
+  }
+
+  const detailHtml=(side,d)=>{
+    let t=`<b>${side==='L'?'左':'右'}: ${d.fit.name}</b><br>`;
+    if(d.err){ t+=`⚠️ ${d.err}`; }
+    else{
+      t+=d.lines.join('<br>');
+      if(d.lines.length) t+='<br>';
+      t+=`控除: ${d.a>=0?'−':'＋'}${fmt(Math.abs(d.a))}mm`;
+    }
+    return `<div>${t}</div>`;
+  };
+  dt.innerHTML=detailHtml('L',dL)+detailHtml('R',dR);
+
+  const addBtn = document.getElementById('addCalcCut');
+  if(isNaN(dL.a)||isNaN(dR.a)){
+    out.innerHTML='—<small>mm</small>'; fm.textContent='寸法データが不足しています（呼び径・相手側口径を確認）';
+    lastCalcCut=null; if(addBtn) addBtn.disabled=true;
+    save(); drawDiagram(); return;
+  }
+  if(isNaN(st.measured)){
+    out.innerHTML='—<small>mm</small>'; fm.textContent='測定値を入力してください';
+    lastCalcCut=null; if(addBtn) addBtn.disabled=true;
+    save(); drawDiagram(); return;
+  }
+  const cut = st.measured - dL.a - dR.a - rootG;
+  const term=(d)=> d.a>=0 ? `− ${fmt(d.a)}` : `＋ ${fmt(-d.a)}`;
+  const gTerm = rootG>0 ? ` − ルート${fmt(rootG/rootEnds)}×${rootEnds}` : '';
+  fm.innerHTML = `${fmt(st.measured)} ${term(dL)} ${term(dR)}${gTerm} = <b>${fmt(cut)} mm</b>`;
+  if(cut<=0){
+    out.innerHTML=`<span class="neg">${fmt(cut)}</span><small>mm</small>`;
+    fm.innerHTML += '<br>⚠️ 切寸法が0以下です。測定位置・継手を確認してください';
+    lastCalcCut=null; if(addBtn) addBtn.disabled=true;
+  } else {
+    out.innerHTML=`${fmt(cut)}<small>mm</small>`;
+    // impact-src: sunpou-app-gosa-boushi — 定尺超えは測定値の桁誤り(slip)のシグナル。
+    // 正しい計算結果でも異常域なら機械が指す（塩ビ定尺4m/鋼管SGP定尺5.5m）
+    const stock=(st.fam==='ts'||st.fam==='dv')?4000:5500;
+    if(cut>stock) fm.innerHTML += `<br>⚠️ <b>定尺${stock/1000}mを超えています</b>。1本で切れません（測定値の桁も確認してください）`;
+    lastCalcCut = {cut, label:`${fam().name} ${st.size}A｜${getFit('L').name}(${REF_DEFS[st.L.ref].label})×${getFit('R').name}(${REF_DEFS[st.R.ref].label})｜測${fmt(st.measured)}${rootG>0?`｜ルート${fmt(rootG/rootEnds)}×${rootEnds}`:''}`};
+    if(addBtn) addBtn.disabled=false;
+  }
+  save(); drawDiagram();
+}
+function renderAll(){
+  renderFamChips(); renderSizes(); renderPartners(); renderPicks(); renderRefs(); renderCatalog(); calc();
+  if(document.getElementById('offSvg')) renderField();
+}
+
+/* ============================ ボトムシート ============================ */
+let sheetSide='L';
+function openSheet(side){
+  sheetSide=side;
+  document.getElementById('sheetTitle').textContent=(side==='L'?'左':'右')+'の継手を選択 — '+fam().name;
+  const grid=document.getElementById('sheetGrid');
+  const items=[...fam().fits, NONE_FIT, CUSTOM_FIT];
+  grid.innerHTML = items.map(f=>{
+    const on = st[side].fit===f.id;
+    return `<button class="fitbtn ${on?'on':''}" onclick="pickFit('${f.id}')">${glyphSVG(f.glyph, side==='L', fam().pal)}<div class="fname">${f.name}</div></button>`;
+  }).join('');
+  document.getElementById('sheetBg').classList.add('open');
+  document.getElementById('sheet').classList.add('open');
+}
+function pickFit(id){
+  st[sheetSide].fit=id;
+  const f=getFit(sheetSide);
+  if(!supportsSize(f, st.size)){
+    const otherFit=getFit(sheetSide==='L'?'R':'L');
+    const cand=fam().sizes.find(sz=>supportsSize(f,sz)&&supportsSize(otherFit,sz));
+    if(cand!==undefined) st.size=cand;
+  }
+  closeSheet(); renderAll();
+}
+function closeSheet(){
+  document.getElementById('sheetBg').classList.remove('open');
+  document.getElementById('sheet').classList.remove('open');
+}
+
+/* ============================ カタログ ============================ */
+function renderCatalog(){
+  const f=fam();
+  const odMap=OD[f.od];
+  const card=(fit,inner)=>`<div class="card cat-fit"><h3>${glyphSVG(fit.glyph,false,f.pal)} ${f.name} ${fit.name}</h3>${inner}</div>`;
+  document.getElementById('catBody').innerHTML = f.fits.map(fit=>{
+    switch(fit.kind){
+      case 'cap': {
+        const sizes = fit.capL ? Object.keys(fit.capL) : Object.keys(f.ins||{});
+        const rows=sizes.map(sz=>{
+          const ins=f.ins?f.ins[sz]:0;
+          const L=fit.capL?fit.capL[sz]:undefined;
+          return `<tr><td>${sz}A</td><td>${f.ins?fmt(ins):'—(突合せ)'}</td><td>${L!==undefined?fmt(L):'未収録'}</td><td>${odMap[sz]??'—'}</td></tr>`;
+        }).join('');
+        return card(fit,`<table><tr><th>呼び径</th><th>ℓ 差込/ねじ代<br>(mm)</th><th>全長<br>(mm)</th><th>パイプ外径<br>(mm)</th></tr>${rows}</table>`);
+      }
+      case 'flange': {
+        const rows=Object.keys(fit.f).map(sz=>{
+          const d=fit.f[sz];
+          const zf = fit.ftype==='socket' ? d.Z : d.T-d.E;
+          const ins = fit.ftype==='socket' ? d.L-d.Z : d.E;
+          const thick = fit.ftype==='socket' ? d.L : d.T;
+          return `<tr><td>${sz}A</td><td>${fmt(zf)}</td><td>${fmt(ins)}</td><td>${fmt(thick)}</td></tr>`;
+        }).join('');
+        return card(fit,`<table><tr><th>呼び径</th><th>面〜管先端<br>(mm)</th><th>差込/ねじ代<br>(mm)</th><th>${fit.ftype==='socket'?'全高':'厚み'}<br>(mm)</th></tr>${rows}</table>`);
+      }
+      case 'rtee': {
+        const rows=Object.keys(fit.pairs).map(k=>{
+          const [b,s]=k.split('x');
+          const p=fit.pairs[k];
+          return `<tr><td>${b}×${s}</td><td>${fmt(p.zr)}</td><td>${fmt(p.zb)}</td><td>${fmt(f.ins[b])}</td><td>${fmt(f.ins[s])}</td></tr>`;
+        }).join('');
+        return card(fit,`<table><tr><th>組合せ<br>(本管×枝)</th><th>Z 本管側<br>(mm)</th><th>Z 枝側<br>(mm)</th><th>ℓ 本管<br>(mm)</th><th>ℓ 枝<br>(mm)</th></tr>${rows}</table><div class="legend">Z＝芯〜パイプ先端（引き寸法）。接続する口によってZが変わる</div>`);
+      }
+      case 'reducer': {
+        if(fit.Hbig){
+          const rows=Object.keys(fit.Hbig).map(sz=>`<tr><td>大径側 ${sz}A</td><td>${fmt(fit.Hbig[sz])}</td></tr>`).join('');
+          return card(fit,`<table><tr><th>呼び径</th><th>全長 H (mm)</th></tr>${rows}</table><div class="legend">長さは大径側の呼びで決まる（同心・偏心共通）</div>`);
+        }
+        const rows=Object.keys(fit.pairs).map(k=>{
+          const [b,s]=k.split('x');
+          const p=fit.pairs[k];
+          const insB = fit.smallOnly ? '—' : fmt(f.ins[b]);
+          const insS = fit.smallOnly ? fmt(p.ins) : fmt(f.ins[s]);
+          return `<tr><td>${b}×${s}</td><td>${fmt(p.L)}</td><td>${insB}</td><td>${insS}</td></tr>`;
+        }).join('');
+        return card(fit,`<table><tr><th>組合せ</th><th>全長 L<br>(mm)</th><th>差込 大側<br>(mm)</th><th>差込 小側<br>(mm)</th></tr>${rows}</table>`);
+      }
+      default: {
+        const rows=Object.keys(fit.z).map(sz=>{
+          const ins=f.ins?(f.ins[sz]??'—'):0;
+          const z=fit.z[sz];
+          const face=f.ins?(z+(f.ins[sz]||0)):z;
+          return `<tr><td>${sz}A</td><td>${fmt(z)}</td><td>${f.ins?fmt(ins):'—'}</td><td>${fmt(face)}</td><td>${odMap[sz]??'—'}</td></tr>`;
+        }).join('');
+        return card(fit,`<table><tr><th>呼び径</th><th>Z 芯〜管先端<br>(mm)</th><th>ℓ 差込/ねじ代<br>(mm)</th><th>芯〜端面<br>(mm)</th><th>パイプ外径<br>(mm)</th></tr>${rows}</table>`);
+      }
+    }
+  }).join('');
+}
+
+/* ============================ 切断リスト（現場メモ） ============================ */
+let cutList = Array.isArray(st.cutList) ? st.cutList : [];
+st.cutList = cutList;
+let lastCalcCut = null;      // 切寸法タブの直近の有効な計算
+let lastOffsetEntries = null; // オフセット計算の直近の有効な結果
+
+function renderCutList(){
+  const html = cutList.length
+    ? cutList.map((c,i)=>
+        `<div class="cutrow" onclick="openReadout(${i})"><span class="cno">${i+1}</span><span class="clabel">${c.label}</span>` +
+        `<span class="cval">${fmt(c.cut)}mm</span><button class="del" onclick="event.stopPropagation();removeCut(${i})">✕</button></div>`
+      ).join('')
+    : '<div class="cutempty">まだありません。計算結果の「＋切断リストへ追加」で貯められます。</div>';
+  for(const id of ['cutList_calc','cutList_field']){
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = html;
+  }
+}
+function pushCuts(entries){
+  for(const e of entries) cutList.push({label:e.label, cut:e.cut});
+  st.cutList = cutList; save(); renderCutList();
+}
+function addCutFromCalc(){ if(lastCalcCut) pushCuts([lastCalcCut]); }
+function addCutFromOffset(){ if(lastOffsetEntries) pushCuts(lastOffsetEntries); }
+function removeCut(i){ cutList.splice(i,1); st.cutList=cutList; save(); renderCutList(); }
+function clearCutList(){
+  if(cutList.length===0) return;
+  if(confirm('切断リストを全消去しますか？')){ cutList.length=0; st.cutList=cutList; save(); renderCutList(); }
+}
+
+/* ============================ クイック操作 ============================ */
+function setBothRefs(r){
+  for(const s of ['L','R']){ if(refsFor(getFit(s)).includes(r)) st[s].ref=r; }
+  renderAll();
+}
+function clearMeasured(){ document.getElementById('measured').value=''; calc(); }
+function clearOffset(){
+  for(const id of ['offH','offV','offRun','offS','offW']) document.getElementById(id).value='';
+  fieldDedTouched = false;
+  renderFieldCalc();
+}
+
+/* ============================ タブ ============================ */
+function showTab(t){
+  for(const [view,btn,key] of [['viewCalc','tabCalc','calc'],['viewField','tabField','field'],['viewCat','tabCat','cat']]){
+    document.getElementById(view).classList.toggle('hidden', t!==key);
+    document.getElementById(btn).classList.toggle('on', t===key);
+  }
+}
+
+/* ============================ 現場計算タブ ============================ */
+const FIELD_ANGLES = [45, 60, 30, 22.5];
+// ヤリトリ(補修)ソケット ES-B 伸縮量 ±mm（クボタケミックス 伸縮継手設置基準 2024-09-10）
+const YARITORI = {50:31, 65:46, 75:52, 100:64, 125:72, 150:87};
+// （参考）差込伸縮ソケット ES-A ±mm — 温度伸縮用で逃げには使わない
+const ESA = {40:13, 50:11, 65:8, 75:10, 100:13, 125:13, 150:21};
+const H_FACES = [['bop','BOP 管下面'],['top','TOP 管上面'],['cop','COP 管芯']];
+let hFace = 'bop';     // 高さ換算: 測った面（既定=BOP。現場で直接測れる面）
+let yariSize = 50;     // ヤリトリ: 呼び径
+const FIELD_SCENES = [
+  ['ud','上下オフセット'], ['side','横オフセット(平面)'],
+  ['riser','立て管オフセット'], ['ob','障害物かわし']
+];
+let fieldAngle = 45;
+let fieldMode = 'angle';       // 'angle'=角度指定 / 'measure'=実測から逆算
+let fieldDedTouched = false;   // 継手控除を手入力したか
+let fieldSlopeTouched = false; // 勾配nを手入力したか
+
+/* ---- 現場計算タブ専用の選択状態 ---- */
+let fSel = {fam:'ts', size:50, L:'l45', R:'l45', scene:'ud'};
+if(st.fieldSel) fSel = Object.assign(fSel, st.fieldSel);
+if(!FAMILIES[fSel.fam]) fSel.fam='ts';
+if(!FAMILIES[fSel.fam].sizes.includes(fSel.size)) fSel.size = FAMILIES[fSel.fam].sizes.includes(50)?50:FAMILIES[fSel.fam].sizes[0];
+if(!FIELD_SCENES.some(s=>s[0]===fSel.scene)) fSel.scene='ud';
+
+function fFam(){ return FAMILIES[fSel.fam]; }
+function fFitOptions(){ return fFam().fits.filter(f=>f.z); } // Z寸法を持つ継手のみ
+function fZ(id){
+  if(id==='none') return 0;
+  const f=fFam().fits.find(x=>x.id===id);
+  const z=f && f.z[fSel.size];
+  return z===undefined ? null : z;
+}
+function fieldAutoDed(){
+  const a=fZ(fSel.L), b=fZ(fSel.R);
+  return (a===null||b===null) ? null : a+b;
+}
+function fieldSave(){ st.fieldSel=fSel; save(); }
+
+function setFieldAngle(a){ fieldAngle=a; fieldDedTouched=false; renderField(); }
+function setFieldMode(m){ fieldMode=m; fieldDedTouched=false; renderField(); }
+function setFScene(s){ fSel.scene=s; fieldDedTouched=false; fieldSave(); renderField(); }
+function setFFam(k){
+  fSel.fam=k;
+  const fm=FAMILIES[k];
+  if(!fm.sizes.includes(fSel.size)) fSel.size = fm.sizes.includes(50)?50:fm.sizes[0];
+  for(const s of ['L','R']){
+    if(fSel[s]!=='none' && !fm.fits.find(x=>x.id===fSel[s] && x.z)) fSel[s]='l45';
+  }
+  fieldDedTouched=false; fieldSave(); renderField();
+}
+function setFSize(sz){ fSel.size=sz; fieldDedTouched=false; fieldSave(); renderField(); }
+function setFFit(side,id){ fSel[side]=id; fieldDedTouched=false; fieldSave(); renderField(); }
+
+function setSlopeN(n){
+  document.getElementById('slN').value = n;
+  fieldSlopeTouched = true;
+  renderFieldCalc();
+}
+function setHFace(f){ hFace=f; renderField(); }
+function setYariSize(sz){ yariSize=sz; renderField(); }
+// 現場計算タブの選択における45°エルボ Z×2（規格エルボヒント用）
+function auto45Ded(){
+  const f = fFam().fits.find(x=>x.id==='l45');
+  const z = f && f.z[fSel.size];
+  return z!==undefined ? 2*z : null;
+}
+function num(id){
+  const v = parseFloat(document.getElementById(id).value);
+  return isNaN(v) ? null : v;
+}
+
+/* コントロール描画: 状態変更時のみ再構築。
+   入力(oninput)ではチップ/セレクトを再構築しない → タップ取りこぼし防止 */
+function renderFieldControls(){
+  document.getElementById('sceneChips').innerHTML = FIELD_SCENES.map(([k,label])=>
+    `<button class="chip ${fSel.scene===k?'on':''}" onclick="setFScene('${k}')">${label}</button>`
+  ).join('');
+  document.getElementById('modeChips').innerHTML = [['angle','角度がわかる'],['measure','角度不明（実測から逆算）']].map(([m,label])=>
+    `<button class="chip ${fieldMode===m?'on':''}" onclick="setFieldMode('${m}')">${label}</button>`
+  ).join('');
+  document.getElementById('angleChips').innerHTML = FIELD_ANGLES.map(a=>
+    `<button class="chip ${fieldAngle===a?'on':''}" onclick="setFieldAngle(${a})">${a}°</button>`
+  ).join('');
+  document.getElementById('fFamChips').innerHTML = Object.entries(FAMILIES).map(([k,f])=>
+    `<button class="chip ${fSel.fam===k?'on':''}" onclick="setFFam('${k}')">${f.name}</button>`
+  ).join('');
+  document.getElementById('fSizeChips').innerHTML = fFam().sizes.map(sz=>{
+    const ok = ['L','R'].every(s=>{
+      if(fSel[s]==='none') return true;
+      const f=fFam().fits.find(x=>x.id===fSel[s]);
+      return f && f.z[sz]!==undefined;
+    });
+    return `<button class="chip ${fSel.size===sz?'on':''}" ${ok?'':'disabled'} onclick="setFSize(${sz})">${sz}A</button>`;
+  }).join('');
+  for(const s of ['L','R']){
+    const sel=document.getElementById('fFit'+s);
+    sel.innerHTML = fFitOptions().map(f=>`<option value="${f.id}">${f.name}</option>`).join('')
+      + '<option value="none">なし（控除0）</option>';
+    sel.value = fSel[s];
+  }
+  document.getElementById('slopeChips').innerHTML = [50,100,150,200,300].map(n=>
+    `<button class="chip" data-n="${n}" onclick="setSlopeN(${n})">1/${n}</button>`
+  ).join('');
+  document.getElementById('hFaceChips').innerHTML = H_FACES.map(([k,label])=>
+    `<button class="chip ${hFace===k?'on':''}" onclick="setHFace('${k}')">${label}</button>`
+  ).join('');
+  document.getElementById('yariChips').innerHTML = Object.keys(YARITORI).map(sz=>
+    `<button class="chip ${yariSize===+sz?'on':''}" onclick="setYariSize(${sz})">${sz}</button>`
+  ).join('');
+}
+
+function renderFieldCalc(){
+  const scene = fSel.scene;
+  /* ---- 場面ごとの表示切替・ラベル ---- */
+  document.getElementById('angleChips').style.display = fieldMode==='angle' ? 'flex' : 'none';
+  document.getElementById('measureRow').style.display = fieldMode==='measure' ? 'flex' : 'none';
+  document.getElementById('obRow').classList.toggle('hidden', scene!=='ob');
+  const HLABEL = {ud:'上下の芯ズレ H (mm)', side:'横の芯ズレ H (mm)', riser:'立て管の芯ズレ H (mm)', ob:'越える高さ H (mm)'};
+  const RLABEL = {ud:'横ズレ ロール (mm・任意)', side:'上下ズレ ロール (mm・任意)', riser:'直交方向ズレ (mm・任意)'};
+  document.getElementById('lblH').firstChild.textContent = HLABEL[scene];
+  const lblRoll = document.getElementById('lblRoll');
+  lblRoll.style.display = scene==='ob' ? 'none' : '';
+  if(scene!=='ob') lblRoll.firstChild.textContent = RLABEL[scene];
+
+  /* ---- オフセット計算 ---- */
+  const offOut = document.getElementById('offOut');
+  const h1 = num('offH');
+  const h2 = scene==='ob' ? null : num('offV');
+  let T = (h1!==null && h1>0) ? (h2 ? Math.sqrt(h1*h1+h2*h2) : h1) : null; // 合成ズレ
+  let travel=null, run=null, angleDeg=null, Tderived=false, err=null;
+
+  if(fieldMode==='angle'){
+    angleDeg = fieldAngle;
+    if(T!==null){
+      const rad = fieldAngle*Math.PI/180;
+      travel = T/Math.sin(rad);
+      run = T/Math.tan(rad);
+    }
+  } else {
+    // 実測から逆算: 芯ズレT / 逃げ / 斜め のうち2つで残り＋角度（障害物かわしは斜め1本分）
+    const Lr = num('offRun'), S = num('offS');
+    if(T!==null && Lr!==null && Lr>0){ travel=Math.sqrt(T*T+Lr*Lr); run=Lr; }
+    else if(T!==null && S!==null && S>T){ travel=S; run=Math.sqrt(S*S-T*T); }
+    else if(Lr!==null && S!==null && Lr>0 && S>Lr){ travel=S; run=Lr; T=Math.sqrt(S*S-Lr*Lr); Tderived=true; }
+    else if(T!==null && S!==null && S<=T){ err='⚠️ 斜めは芯ズレより長い必要があります'; }
+    if(travel!==null) angleDeg = Math.atan2(T, run)*180/Math.PI;
+  }
+
+  autoDedUpdate();
+
+  if(err){
+    offOut.textContent = err;
+    lastOffsetEntries = null;
+  } else if(travel!==null){
+    const lines=[];
+    const ded = num('offDed') ?? 0;
+    const cut = travel - ded;
+    if(h2 && !Tderived) lines.push(`合成ズレ √(${fmt(h1)}²+${fmt(h2)}²) = <b>${fmt(T)}</b> mm`);
+    if(Tderived) lines.push(`芯ズレ（逆算）: <b>${fmt(T)}</b> mm`);
+    if(fieldMode==='measure'){
+      lines.push(`角度 = <b>${fmt(angleDeg)}°</b>${nearestAngleHint(angleDeg)}`);
+    }
+    lines.push(`斜め芯々${scene==='ob'?'(1本)':''}: <b>${fmt(travel)}</b> mm ／ 逃げ${scene==='ob'?'(1本)':''}: <b>${fmt(run)}</b> mm`);
+    // 選択継手の角度と実際の角度の不一致チェック
+    const mism=['L','R'].map(s=>{
+      const f=fFam().fits.find(x=>x.id===fSel[s]);
+      return (f && f.angle && Math.abs(f.angle-angleDeg)>3) ? `${s==='L'?'①':'②'}${f.name}(${f.angle}°)` : null;
+    }).filter(Boolean);
+    if(mism.length) lines.push(`⚠️ 角度${fmt(angleDeg)}°と継手の角度が不一致 — ${mism.join('・')}`);
+    const sceneName = FIELD_SCENES.find(x=>x[0]===scene)[1];
+    lastOffsetEntries = null;
+    if(scene==='ob'){
+      // 障害物かわし: 斜め2本 + 中間水平管（両端=継手②）
+      const W = num('offW');
+      lines.push(`✂️ 斜めの切寸法 ${ded>0?`= ${fmt(travel)} − ${fmt(ded)} `:''}= <span class="big">${fmt(cut)} mm</span> × <b>2本</b>${cut<=0?' ⚠️マイナス':''}`);
+      if(cut>0) lastOffsetEntries = [{label:`${sceneName}｜${fFam().name} ${fSel.size}A 斜め ×2本`, cut}];
+      if(W!==null && W>0){
+        const zR = fZ(fSel.R) ?? 0;
+        const cutMid = W - 2*zR;
+        lines.push(`✂️ 中間水平管 = ${fmt(W)} − ${fmt(zR)}×2 = <b>${fmt(cutMid)} mm</b>（両端=継手②）${cutMid<=0?' ⚠️マイナス':''}`);
+        lines.push(`全体の逃げ = ${fmt(run)}×2 + ${fmt(W)} = <b>${fmt(2*run+W)}</b> mm`);
+        if(cutMid>0 && lastOffsetEntries) lastOffsetEntries.push({label:`${sceneName}｜中間水平管`, cut:cutMid});
+      } else {
+        lines.push(`全体の逃げ（W除く） = ${fmt(run)}×2 = <b>${fmt(2*run)}</b> mm`);
+      }
+    } else {
+      if(ded>0) lines.push(`✂️ 切寸法 = ${fmt(travel)} − ${fmt(ded)} = <span class="big">${fmt(cut)} mm</span>`
+        + (cut<=0?' ⚠️マイナス':''));
+      else lines.push(`✂️ 切寸法（控除なし）: <span class="big">${fmt(travel)} mm</span>`);
+      if(cut>0) lastOffsetEntries = [{label:`${sceneName}｜${fFam().name} ${fSel.size}A 斜め`, cut}];
+    }
+    if(lastOffsetEntries) lines.push(`<button class="addbtn" onclick="addCutFromOffset()">＋ 切断リストへ追加</button>`);
+    offOut.innerHTML = lines.join('<br>');
+  } else {
+    lastOffsetEntries = null;
+    offOut.textContent = fieldMode==='angle'
+      ? (scene==='ob' ? '越える高さHを入力してください' : '芯ズレを入力してください')
+      : '芯ズレ・逃げ・斜めのうち2つを入力してください';
+  }
+  drawOffsetSvg(scene, (travel!==null&&!err)?{T,travel,run}:null, T, angleDeg!==null?fmt(angleDeg)+'°':'?°', num('offW'));
+  renderFieldRest();
+}
+
+function renderField(){ renderFieldControls(); renderFieldCalc(); }
+// 継手控除の自動セット: 選択中の左右継手のZ寸法合計
+function autoDedUpdate(){
+  const dedInput = document.getElementById('offDed');
+  const auto = fieldAutoDed();
+  if(!fieldDedTouched){
+    dedInput.value = (auto!==null && auto>0) ? Math.round(auto*10)/10 : '';
+  }
+  const lbl = document.getElementById('dedLabel').firstChild;
+  if(auto===null){
+    lbl.textContent = `両端の継手控除 合計 (⚠ ${fSel.size}Aのデータが無い継手あり・手入力)`;
+  } else if(auto>0){
+    const nm=(s)=>{
+      if(fSel[s]==='none') return 'なし';
+      const f=fFam().fits.find(x=>x.id===fSel[s]);
+      return `${f.name} Z${fmt(fZ(fSel[s]))}`;
+    };
+    lbl.textContent = `両端の継手控除 合計 (自動: ${fFam().name} ${fSel.size}A ${nm('L')} + ${nm('R')})`;
+  } else {
+    lbl.textContent = '両端の継手控除 合計 (mm・任意)';
+  }
+}
+// 実測角度が規格エルボに近いときのヒント
+function nearestAngleHint(deg){
+  const auto = auto45Ded();
+  let best=null;
+  for(const a of [22.5,30,45,60,90]){
+    if(best===null || Math.abs(deg-a)<Math.abs(deg-best)) best=a;
+  }
+  const diff = Math.abs(deg-best);
+  if(diff<=3){
+    let s = `（≒${best}°エルボ`;
+    if(best===45 && auto!==null) s += `・Z×2=${fmt(auto)}`;
+    return s + (diff>0.5?'・要微調整':'') + '）';
+  }
+  return '（規格エルボ外・自在/切り継手）';
+}
+function renderFieldRest(){
+
+  /* ---- ピタゴラス ---- */
+  const A = num('pyA'), B = num('pyB'), C = num('pyC');
+  const pyOut = document.getElementById('pyOut');
+  let py = null;
+  if(A!==null && B!==null && A>0 && B>0){
+    py = {A, B, C:Math.sqrt(A*A+B*B), calced:'C 斜辺'};
+  } else if(C!==null && A!==null && C>A && A>0){
+    py = {A, B:Math.sqrt(C*C-A*A), C, calced:'B 高さ'};
+  } else if(C!==null && B!==null && C>B && B>0){
+    py = {A:Math.sqrt(C*C-B*B), B, C, calced:'A 底辺'};
+  }
+  if(py){
+    const th = Math.atan2(py.B, py.A)*180/Math.PI;
+    pyOut.innerHTML = `${py.calced} = <span class="big">${fmt(py.calced.startsWith('C')?py.C:py.calced.startsWith('B')?py.B:py.A)} mm</span><br>`
+      + `A ${fmt(py.A)} / B ${fmt(py.B)} / C ${fmt(py.C)} mm ・ 角度θ = <b>${fmt(th)}°</b>`;
+  } else if(C!==null && (A!==null||B!==null) && C<=(A??B)){
+    pyOut.textContent = '⚠️ 斜辺Cは他の辺より長い必要があります';
+  } else {
+    pyOut.textContent = 'どれか2つを入力してください';
+  }
+
+  /* ---- 勾配 ---- */
+  // チップは再構築せず選択ハイライトのみ更新（タップ取りこぼし防止）
+  document.querySelectorAll('#slopeChips .chip').forEach(b=>
+    b.classList.toggle('on', num('slN')===parseFloat(b.dataset.n)));
+  const L = num('slL'), D = num('slD'), N = num('slN');
+  const slOut = document.getElementById('slOut');
+  let sl = null;
+  if(L!==null && N!==null && L>0 && N>0)      sl = {L, N, D: L*1000/N, calced:'落差'};
+  else if(L!==null && D!==null && L>0 && D>0) sl = {L, D, N: L*1000/D, calced:'勾配'};
+  else if(N!==null && D!==null && N>0 && D>0) sl = {N, D, L: D*N/1000, calced:'長さ'};
+  if(sl){
+    const deg = Math.atan2(1, sl.N)*180/Math.PI;
+    const main = sl.calced==='落差' ? `落差 = <span class="big">${fmt(sl.D)} mm</span>`
+               : sl.calced==='勾配' ? `勾配 = <span class="big">1/${fmt(sl.N)}</span>`
+               : `長さ = <span class="big">${fmt(sl.L*10)/10} m</span>`;
+    slOut.innerHTML = `${main}<br>長さ ${fmt(sl.L)}m ・ 落差 ${fmt(sl.D)}mm ・ 勾配 1/${fmt(sl.N)}（${fmt(100/sl.N)}%・${(deg).toFixed(2)}°）`;
+  } else {
+    slOut.textContent = '長さ＋勾配（または落差）を入力してください';
+  }
+
+  /* ---- 高さ換算 BOP/COP/TOP（管種・呼び径は現場計算タブの選択を使用） ---- */
+  const hOut = document.getElementById('hOut');
+  const od = OD[fFam().od][fSel.size];
+  const hv = num('hVal'), hins = num('hIns');
+  if(od===undefined){
+    hOut.textContent = `⚠️ ${fFam().name} ${fSel.size}A の外径データがありません`;
+  } else if(hv===null){
+    hOut.innerHTML = `${fFam().name} ${fSel.size}A（外径 ${fmt(od)}mm）。測った面を選んで高さを入力。<br>COPは現場で直接測れない → 測れる面(BOP/TOP)から式で出す`;
+  } else {
+    const bop = hFace==='bop' ? hv : hFace==='cop' ? hv-od/2 : hv-od;
+    const cop = bop+od/2, top = bop+od;
+    const rows = [
+      `BOP 管下面 <b>${fmt(bop)}</b> ／ COP 管芯 <b>${fmt(cop)}</b> ／ TOP 管上面 <b>${fmt(top)}</b> mm`,
+      `式: COP = BOP ＋ 外径${fmt(od)}/2 = TOP − ${fmt(od)}/2`
+    ];
+    if(hins!==null && hins>0) rows.push(`保温外面: 上端 <b>${fmt(top+hins)}</b> ／ 下端 <b>${fmt(bop-hins)}</b> mm（納まりに効く・切寸には効かない）`);
+    if(bop<0) rows.push('⚠️ BOPがマイナス（基準面より下）。基準面と測った面を確認');
+    rows.push('勾配はBOP基準で作る（COP基準は異径箇所で管底に段差）');
+    hOut.innerHTML = rows.join('<br>');
+  }
+
+  /* ---- 逃げ・ヤリトリ（塩ビ現場合わせ） ---- */
+  const yOut = document.getElementById('yariOut');
+  const ya = YARITORI[yariSize];
+  const need = num('yariNeed');
+  const yl = [`ヤリトリ(補修)ソケット ${yariSize}呼び: 伸縮量 <span class="big">±${ya} mm</span>`];
+  if(ESA[yariSize]!==undefined) yl.push(`（参考）差込伸縮ソケット: ±${ESA[yariSize]}mm — 温度伸縮用・逃げには使わない`);
+  if(need!==null && need>0){
+    yl.push(need<=ya
+      ? `✅ ${fmt(need)}mm ≦ ±${ya} — このヤリトリで吸収できます`
+      : `🔴 ${fmt(need)}mm ＞ ±${ya} — 吸収不可。逃げの位置・スプール分割を見直す`);
+  }
+  yOut.innerHTML = yl.join('<br>');
+}
+
+// オフセット模式図（場面別）
+function drawOffsetSvg(scene, res, T, angleLabel, W){
+  const svg = document.getElementById('offSvg');
+  const PIPE='fill="#cbd5e1" stroke="#64748b" stroke-width="1.5"';
+  const BEND='r="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2.5"';
+  const tv = res ? fmt(res.travel) : '?';
+  const rn = res ? fmt(res.run) : '?';
+  const Td = (T!==null&&T!==undefined) ? fmt(T) : '';
+  const cap = (t)=>`<text x="10" y="14" font-size="12" fill="#64748b">${t}</text>`;
+  let s='';
+  switch(scene){
+    case 'side': // 平面図（上から見た図）: 幾何は同じ、キャプションとラベルが違う
+    case 'ud': { // 立面図
+      const y1=35, y2=115, x1=120, x2=220;
+      const hName = scene==='ud' ? 'H' : '横ズレ';
+      s = `${cap(scene==='ud'?'立面図（横から見た図）':'平面図（上から見た図）')}
+        <rect x="10" y="${y1-8}" width="${x1-10}" height="16" ${PIPE}/>
+        <rect x="${x2}" y="${y2-8}" width="130" height="16" ${PIPE}/>
+        <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#94a3b8" stroke-width="14"/>
+        <circle cx="${x1}" cy="${y1}" ${BEND}/><circle cx="${x2}" cy="${y2}" ${BEND}/>
+        <line x1="${x1}" y1="${y1}" x2="${x2+40}" y2="${y1}" stroke="#2563eb" stroke-width="1" stroke-dasharray="4 3"/>
+        <line x1="${x2+30}" y1="${y1}" x2="${x2+30}" y2="${y2}" stroke="#dc2626" stroke-width="2"/>
+        <text x="${x2+36}" y="${(y1+y2)/2+4}" font-size="13" font-weight="bold" fill="#dc2626">${hName} ${Td}</text>
+        <text x="${(x1+x2)/2+6}" y="${(y1+y2)/2-2}" font-size="12" font-weight="bold" fill="#1d4ed8">斜め ${tv}</text>
+        <path d="M ${x1+22} ${y1} A 22 22 0 0 1 ${x1+16} ${y1+15}" fill="none" stroke="#b45309" stroke-width="1.5"/>
+        <text x="${x1+28}" y="${y1+22}" font-size="12" fill="#b45309">${angleLabel||'?°'}</text>
+        <line x1="${x1}" y1="${y2+18}" x2="${x2}" y2="${y2+18}" stroke="#16a34a" stroke-width="1.5"/>
+        <text x="${(x1+x2)/2}" y="${y2+32}" font-size="12" fill="#16a34a" text-anchor="middle">逃げ ${rn}</text>`;
+      break;
+    }
+    case 'riser': { // 立て管の芯ズレ（立面）
+      const x1=120, x2=240, y1=55, y2=105;
+      s = `${cap('立面図（立て管）')}
+        <rect x="${x1-8}" y="5" width="16" height="${y1-5}" ${PIPE}/>
+        <rect x="${x2-8}" y="${y2}" width="16" height="42" ${PIPE}/>
+        <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#94a3b8" stroke-width="14"/>
+        <circle cx="${x1}" cy="${y1}" ${BEND}/><circle cx="${x2}" cy="${y2}" ${BEND}/>
+        <line x1="${x1}" y1="${y1}" x2="${x1}" y2="25" stroke="#2563eb" stroke-width="1" stroke-dasharray="4 3"/>
+        <line x1="${x2}" y1="${y2}" x2="${x2}" y2="25" stroke="#2563eb" stroke-width="1" stroke-dasharray="4 3"/>
+        <line x1="${x1}" y1="28" x2="${x2}" y2="28" stroke="#dc2626" stroke-width="2"/>
+        <text x="${(x1+x2)/2}" y="22" font-size="13" font-weight="bold" fill="#dc2626" text-anchor="middle">H ${Td}</text>
+        <text x="${(x1+x2)/2-4}" y="${(y1+y2)/2+22}" font-size="12" font-weight="bold" fill="#1d4ed8">斜め ${tv}</text>
+        <line x1="${x2+55}" y1="${y1}" x2="${x2+55}" y2="${y2}" stroke="#16a34a" stroke-width="1.5"/>
+        <line x1="${x1}" y1="${y1}" x2="${x2+60}" y2="${y1}" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <line x1="${x2}" y1="${y2}" x2="${x2+60}" y2="${y2}" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <text x="${x2+60}" y="${(y1+y2)/2+4}" font-size="12" fill="#16a34a">逃げ ${rn}</text>
+        <path d="M ${x1+14} ${y1+14} A 20 20 0 0 0 ${x1+20} ${y1+2}" fill="none" stroke="#b45309" stroke-width="1.5"/>
+        <text x="${x1+24}" y="${y1+16}" font-size="12" fill="#b45309">${angleLabel||'?°'}</text>`;
+      break;
+    }
+    case 'ob': { // 障害物かわし（上越し）
+      const yLo=112, yHi=60, xA=62, xB=112, xC=248, xD=298;
+      s = `${cap('立面図（上越し・下くぐりは上下逆）')}
+        <rect x="140" y="86" width="80" height="52" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5" rx="4"/>
+        <text x="180" y="116" font-size="12" fill="#dc2626" text-anchor="middle">障害物</text>
+        <rect x="6" y="${yLo-8}" width="${xA-6}" height="16" ${PIPE}/>
+        <rect x="${xD}" y="${yLo-8}" width="50" height="16" ${PIPE}/>
+        <line x1="${xA}" y1="${yLo}" x2="${xB}" y2="${yHi}" stroke="#94a3b8" stroke-width="12"/>
+        <line x1="${xC}" y1="${yHi}" x2="${xD}" y2="${yLo}" stroke="#94a3b8" stroke-width="12"/>
+        <rect x="${xB}" y="${yHi-8}" width="${xC-xB}" height="16" ${PIPE}/>
+        <circle cx="${xA}" cy="${yLo}" ${BEND}/><circle cx="${xB}" cy="${yHi}" ${BEND}/>
+        <circle cx="${xC}" cy="${yHi}" ${BEND}/><circle cx="${xD}" cy="${yLo}" ${BEND}/>
+        <line x1="${xB}" y1="${yHi-20}" x2="${xC}" y2="${yHi-20}" stroke="#1d4ed8" stroke-width="1.5"/>
+        <text x="${(xB+xC)/2}" y="${yHi-26}" font-size="12" fill="#1d4ed8" text-anchor="middle">W ${W?fmt(W):'?'}</text>
+        <line x1="${xD+34}" y1="${yHi}" x2="${xD+34}" y2="${yLo}" stroke="#dc2626" stroke-width="2"/>
+        <line x1="${xC}" y1="${yHi}" x2="${xD+40}" y2="${yHi}" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3 3"/>
+        <text x="${xD+8}" y="${(yHi+yLo)/2+4}" font-size="12" font-weight="bold" fill="#dc2626">H ${Td}</text>
+        <text x="${xA-4}" y="${yHi+14}" font-size="12" font-weight="bold" fill="#1d4ed8">斜め ${tv}×2</text>
+        <text x="${(xA+xB)/2}" y="${yLo+26}" font-size="12" fill="#16a34a">逃げ ${rn}×2＋W</text>`;
+      break;
+    }
+  }
+  svg.innerHTML = s;
+}
+
+/* ============================ 起動 ============================ */
+if(st.measured) document.getElementById('measured').value=st.measured;
+renderAll();
+renderCutList();
+
+/* ── 自前テンキー: OSキーボードは画面の半分を隠し、手袋では誤打しやすい ── */
+function key(k){
+  const el=document.getElementById('measured');
+  let v=String(el.value||'');
+  if(k==='<') v=v.slice(0,-1);
+  else if(k==='.'){ if(v.includes('.')) return; v=(v||'0')+'.'; }
+  else v=v+k;
+  el.value=v; calc();
+}
+/* ⌫は短押し=1桁削除／長押し(600ms)=全消去。
+   Pipe Trades Proの実レビュー最多の不満「1桁ミスで全消去しかない」の逆を塞ぐ
+   （短押し1桁は実装済みなので、全消去側を⌫に同居させて✕まで指を運ばずに済ませる） */
+(function(){
+  const b=document.getElementById('bsKey'); if(!b) return;
+  let t=null, fired=false;
+  const cancel=()=>{ if(t){clearTimeout(t); t=null;} };
+  b.addEventListener('pointerdown',()=>{ fired=false;
+    t=setTimeout(()=>{ fired=true; clearMeasured(); if(navigator.vibrate) navigator.vibrate(30); },600); });
+  b.addEventListener('pointerup',cancel);
+  b.addEventListener('pointerleave',cancel);
+  b.addEventListener('click',()=>{ if(!fired) key('<'); });
+})();
+
+/* impact-src: sunpou-app-gosa-boushi — 読み合わせモード */
+let readIdx=-1;
+function openReadout(i){
+  if(!cutList[i]) return;
+  readIdx=i;
+  document.getElementById('readNo').textContent=`切断リスト ${i+1} / ${cutList.length}`;
+  document.getElementById('readLabel').textContent=cutList[i].label;
+  document.getElementById('readVal').innerHTML=`${fmt(cutList[i].cut)}<small>mm</small>`;
+  document.getElementById('readPrev').disabled=(i===0);
+  document.getElementById('readNext').disabled=(i===cutList.length-1);
+  document.getElementById('readBg').classList.add('open');
+}
+function readoutStep(d){ openReadout(readIdx+d); }
+function closeReadout(){ document.getElementById('readBg').classList.remove('open'); readIdx=-1; }
+/* ── 屋外/屋内: 既定は屋外（直射日光下） ── */
+function toggleMode(){
+  const r=document.documentElement;
+  const indoor = r.getAttribute('data-mode')==='indoor';
+  if(indoor) r.removeAttribute('data-mode'); else r.setAttribute('data-mode','indoor');
+  try{ localStorage.setItem('pcc_mode', indoor?'':'indoor'); }catch(e){}
+  syncModeBtn();
+}
+function syncModeBtn(){
+  const b=document.getElementById('modeBtn'); if(!b) return;
+  b.textContent = document.documentElement.getAttribute('data-mode')==='indoor' ? '屋外にする' : '屋内にする';
+}
+try{ if(localStorage.getItem('pcc_mode')==='indoor') document.documentElement.setAttribute('data-mode','indoor'); }catch(e){}
+syncModeBtn();
+
+/* 内訳の開閉。既定は畳む（結果カードを短くして「打つ→答えを見る」を1画面に収めるため） */
+function toggleDetail(){
+  var d=document.getElementById('detail'), b=document.getElementById('detailBtn');
+  var open=d.classList.toggle('hidden')===false;
+  b.textContent = open ? '内訳を閉じる' : '左右の内訳を見る';
+  b.setAttribute('aria-expanded', open?'true':'false');
+  try{ localStorage.setItem('pcc_detail', open?'1':''); }catch(e){}
+}
+try{ if(localStorage.getItem('pcc_detail')==='1'){ document.getElementById('detail').classList.remove('hidden');
+  var _b=document.getElementById('detailBtn'); if(_b){_b.textContent='内訳を閉じる'; _b.setAttribute('aria-expanded','true');} } }catch(e){}
+
+/* ── PWA: GitHub Pages配信時のみService Worker登録（オフライン動作・ホーム画面追加） ──
+   file:// 直開き（従来の配布形態）ではSWは登録できないが、アプリは1ファイルで完結
+   しているので従来どおり全機能が動く。two-track配布 */
+if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
+  navigator.serviceWorker.register('./sw.js').catch(function(e){ /* 配信環境以外では黙って諦める */ });
+}</script>
+</body>
+</html>
+
