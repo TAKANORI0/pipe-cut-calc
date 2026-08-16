@@ -320,7 +320,8 @@
       <button class="minibtn" onclick="setBothRefs('center')">両方=芯</button>
       <button class="minibtn" style="margin-left:4px" onclick="setBothRefs('face')">両方=端面</button>
     </h2>
-    <svg id="diagram" viewBox="0 0 360 150" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg id="diagram" viewBox="0 0 360 250" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="legend">👆 <b>薄い点線の枝をタップ＝継手の向きを変更</b>（上・下・手前・奥。図の一致のみで切寸は変わりません）。太い実線＝現在の向き。右下の3本線がアイソメの軸（上／手前／奥）</div>
     <div class="refrow">
       <div class="refcol">
         <div class="rlabel" id="refLabL">左の基準</div>
@@ -987,8 +988,8 @@ function glyphSVG(g, mirror, palName){
   return `<svg viewBox="0 0 84 64" xmlns="http://www.w3.org/2000/svg">${defs}<g ${sc}>${body}</g></svg>`;
 }
 
-/* ============================ メイン図 ============================ */
-function drawDiagram(){
+/* ============================ メイン図（旧・平面2D版。v16のアイソメ版で置換済み・未使用） ============================ */
+function drawDiagram_legacy2d(){
   const svg=document.getElementById('diagram');
   const cy=95, cxL=70, cxR=290;
   const fL=getFit('L'), fR=getFit('R');
@@ -1125,6 +1126,152 @@ function drawDiagram(){
   svg.innerHTML = wrap(orient('L',fL,fitShape('L',fL)),cyT) + wrap(orient('R',fR,fitShape('R',fR)),cyB) + pipeV + dimV;
 }
 
+/* ============================ メイン図（アイソメ・v16） ============================
+   現場フィードバック第3号: 「考えられる設置向きすべてに、3Dみたいな操作で直感的に」。
+   等角投影（配管アイソメと同じ3軸）で描き、薄い点線のゴースト枝をタップすると
+   継手の向きが切り替わる。向きは図の一致のためだけで、切寸（Z控除）は不変。 */
+const ISO = { d1:[0.866,0.5], d2:[0.866,-0.5], U:[0,-1] };  // 画面上の等角3軸
+function isoVec(key){ const s=key.endsWith('-')?-1:1; const a=ISO[key.slice(0,-1)]; return [a[0]*s, a[1]*s]; }
+function dirLabel(k){
+  return st.vert
+    ? {'d1+':'右手前','d1-':'左奥','d2+':'右奥','d2-':'左手前'}[k]
+    : {'U+':'上','U-':'下','d1+':'手前','d1-':'奥'}[k];
+}
+function setDir3(s,k){ st[s].dir3=k; save(); drawDiagram(); }
+
+function drawDiagram(){
+  const svg=document.getElementById('diagram');
+  const fL=getFit('L'), fR=getFit('R');
+  svg.setAttribute('viewBox','0 0 360 250');
+
+  function refOffsetPx(ref){
+    switch(ref){
+      case 'outer': return 26;  case 'inner': return -26;
+      case 'face': return -30;  case 'fface': return 8;
+      case 'fback': return -12; case 'top': return 30;
+      case 'rfar': return 30;   default: return 0;
+    }
+  }
+  const axisKey = st.vert ? 'U' : 'd2';
+  const aLR = st.vert ? isoVec('U-') : isoVec('d2+');   // L端(上/左)→R端(下/右)
+  const C=[184,128], half = st.vert?84:104;
+  const add=(p,v,t)=>[p[0]+v[0]*t, p[1]+v[1]*t];
+  const EL=add(C,aLR,-half), ER=add(C,aLR,half);
+  const outL=[-aLR[0],-aLR[1]], outR=[aLR[0],aLR[1]];
+  const cand = ['U+','U-','d1+','d1-','d2+','d2-'].filter(k=>k.slice(0,-1)!==axisKey);
+  const candAxes = ['U','d1','d2'].filter(k=>k!==axisKey);
+  const F=(n)=>n.toFixed(1);
+  const seg=(p,q,ow,iw,oc,ic)=>{
+    let s=`<line x1="${F(p[0])}" y1="${F(p[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="${oc}" stroke-width="${ow}" stroke-linecap="round"/>`;
+    if(iw) s+=`<line x1="${F(p[0])}" y1="${F(p[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="${ic}" stroke-width="${iw}" stroke-linecap="round"/>`;
+    return s;
+  };
+  const mix=(u,v,ku,kv)=>{ const x=u[0]*ku+v[0]*kv, y=u[1]*ku+v[1]*kv, L=Math.hypot(x,y); return [x/L,y/L]; };
+  const isEda=(side,fit)=> fit.kind==='rtee' && st[side].other && fit.pairs[st[side].other+'x'+st.size];
+
+  function curDir(side,fit){
+    const v=st[side].dir3;
+    if(isEda(side,fit)){
+      const ax = v && candAxes.includes(v.slice(0,-1)) ? v.slice(0,-1) : candAxes[0];
+      return ax+'+';
+    }
+    return cand.includes(v) ? v : (st.vert?'d1+':'U+');
+  }
+  function ghost(side,vkey,len){
+    const E = side==='L'?EL:ER, v=isoVec(vkey), q=add(E,v,len||42);
+    return `<g style="cursor:pointer" onclick="setDir3('${side}','${vkey}')">
+      <line x1="${F(E[0])}" y1="${F(E[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="rgba(0,0,0,0)" stroke-width="34"/>
+      <line x1="${F(E[0])}" y1="${F(E[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="#94a3b8" stroke-width="3" stroke-dasharray="5 4"/>
+      <circle cx="${F(q[0])}" cy="${F(q[1])}" r="8" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+      <text x="${F(q[0]+v[0]*16)}" y="${F(q[1]+v[1]*16+4)}" font-size="10" text-anchor="middle" fill="#94a3b8">${dirLabel(vkey)}</text></g>`;
+  }
+  function drawFit(side,fit){
+    const E = side==='L'?EL:ER, out = side==='L'?outL:outR;
+    const arm=(p,q)=>seg(p,q,20,13,'#1d4ed8','#93c5fd');
+    const port=(q)=>`<circle cx="${F(q[0])}" cy="${F(q[1])}" r="9" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>`;
+    let g='';
+    switch(fit.kind){
+      case 'none': {
+        const n=[-out[1],out[0]];
+        g+=`<line x1="${F(E[0]-n[0]*15)}" y1="${F(E[1]-n[1]*15)}" x2="${F(E[0]+n[0]*15)}" y2="${F(E[1]+n[1]*15)}" stroke="#dc2626" stroke-width="4"/>`;
+        break;
+      }
+      case 'custom':
+        g+=`<rect x="${F(E[0]-16)}" y="${F(E[1]-16)}" width="32" height="32" rx="6" fill="#fef3c7" stroke="#b45309" stroke-width="2.5" stroke-dasharray="5 3"/>
+            <text x="${F(E[0])}" y="${F(E[1]+6)}" font-size="16" text-anchor="middle" fill="#b45309" font-weight="bold">?</text>`;
+        break;
+      case 'straight':
+        g+=seg(add(E,out,16), add(E,out,-16), 26,17,'#1d4ed8','#93c5fd');
+        break;
+      case 'cap':
+        g+=seg(add(E,out,2), add(E,out,14), 26,17,'#1d4ed8','#93c5fd');
+        break;
+      case 'flange': {
+        const ang=Math.atan2(out[1],out[0])*180/Math.PI;
+        g+=`<ellipse cx="${F(E[0])}" cy="${F(E[1])}" rx="7" ry="24" transform="rotate(${F(ang)} ${F(E[0])} ${F(E[1])})" fill="#93c5fd" stroke="#1d4ed8" stroke-width="2.5"/>`;
+        break;
+      }
+      case 'reducer':
+        g+=seg(E, add(E,out,24), 20,13,'#1d4ed8','#93c5fd')+seg(add(E,out,24), add(E,out,42), 13,7,'#1d4ed8','#93c5fd')+port(add(E,out,42));
+        break;
+      case 'elbow': {
+        const vkey=curDir(side,fit), v=isoVec(vkey);
+        const av = fit.angle===45 ? mix(out,v,0.55,0.85) : v;
+        const q=add(E,av,54);
+        g+=arm(E,q)+port(q);
+        g+=`<text x="${F(q[0]+av[0]*18)}" y="${F(q[1]+av[1]*18+4)}" font-size="11" font-weight="bold" text-anchor="middle" fill="#1d4ed8">${dirLabel(vkey)}</text>`;
+        for(const k of cand) if(k!==vkey) g=ghost(side,k)+g;
+        break;
+      }
+      case 'tee': case 'rtee': {
+        if(isEda(side,fit)){
+          // 枝側接続: 本管が直交して両側に通る。向き=本管の軸（2択）
+          const ax=curDir(side,fit).slice(0,-1), v=isoVec(ax+'+');
+          g+=seg(add(E,v,-56), add(E,v,56), 20,13,'#1d4ed8','#93c5fd')+port(add(E,v,56))+port(add(E,v,-56));
+          for(const ok of candAxes) if(ok!==ax) g=ghost(side,ok+'+',36)+ghost(side,ok+'-',36)+g;
+        } else {
+          // 本管側接続: 管はそのまま通り、枝が1方向に出る（4択）
+          const vkey=curDir(side,fit), v=isoVec(vkey), q=add(E,v,50);
+          g+=seg(add(E,out,4), add(E,out,26), 18,12,'#64748b','#e2e8f0');  // 通り抜ける本管
+          g+=arm(E,q)+port(q);
+          g+=`<text x="${F(q[0]+v[0]*18)}" y="${F(q[1]+v[1]*18+4)}" font-size="11" font-weight="bold" text-anchor="middle" fill="#1d4ed8">${dirLabel(vkey)}</text>`;
+          for(const k of cand) if(k!==vkey) g=ghost(side,k)+g;
+        }
+        break;
+      }
+    }
+    return g;
+  }
+
+  // 寸法線: 管軸に平行・画面上で管の反対側へ逃がす
+  const n = st.vert ? [-1,0] : [-0.5,-0.866];
+  const Lpt=add(EL,outL,refOffsetPx(st.L.ref)), Rpt=add(ER,outR,refOffsetPx(st.R.ref));
+  const dL=add(Lpt,n,52), dR=add(Rpt,n,52), mid=[(dL[0]+dR[0])/2,(dL[1]+dR[1])/2];
+  const dim=`
+    <line x1="${F(dL[0])}" y1="${F(dL[1])}" x2="${F(dR[0])}" y2="${F(dR[1])}" stroke="#dc2626" stroke-width="2"/>
+    <line x1="${F(Lpt[0])}" y1="${F(Lpt[1])}" x2="${F(dL[0])}" y2="${F(dL[1])}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <line x1="${F(Rpt[0])}" y1="${F(Rpt[1])}" x2="${F(dR[0])}" y2="${F(dR[1])}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <circle cx="${F(dL[0])}" cy="${F(dL[1])}" r="5" fill="#fff" stroke="#dc2626" stroke-width="2.5"/>
+    <circle cx="${F(dR[0])}" cy="${F(dR[1])}" r="5" fill="#fff" stroke="#dc2626" stroke-width="2.5"/>
+    <text x="${F(mid[0]+n[0]*16)}" y="${F(mid[1]+n[1]*16)}" font-size="13" font-weight="bold" text-anchor="middle" fill="#dc2626">測定値 ${st.measured?fmt(st.measured):'?'} mm</text>
+    <text x="${F(dL[0]+n[0]*10)}" y="${F(dL[1]+n[1]*10-8)}" font-size="11" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.L.ref].label}</text>
+    <text x="${F(dR[0]+n[0]*10)}" y="${F(dR[1]+n[1]*10+14)}" font-size="11" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.R.ref].label}</text>`;
+
+  const pipe = seg(EL,ER,18,12,'#64748b','#e2e8f0')
+    +`<text x="${F(C[0]+ (st.vert?30:0))}" y="${F(C[1]+(st.vert?4:26))}" font-size="12" fill="#64748b">切るパイプ ${st.size}A</text>`;
+
+  // 3軸の凡例（右下）: アイソメの読み方
+  const tri=(k,label)=>{ const v=isoVec(k), o=[320,222], q=add(o,v,20);
+    return `<line x1="${o[0]}" y1="${o[1]}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="#94a3b8" stroke-width="2"/>
+      <text x="${F(q[0]+v[0]*10)}" y="${F(q[1]+v[1]*10+3)}" font-size="9" text-anchor="middle" fill="#94a3b8">${label}</text>`; };
+  const triad = tri('U+','上')+tri('d1+','手前')+tri('d2+','奥');
+
+  const endLab=`<text x="${F(EL[0])}" y="${F(EL[1]+(st.vert?-28:34))}" font-size="11" text-anchor="middle" fill="#64748b">${sideName('L')}</text>
+    <text x="${F(ER[0])}" y="${F(ER[1]+(st.vert?36:-24))}" font-size="11" text-anchor="middle" fill="#64748b">${sideName('R')}</text>`;
+
+  svg.innerHTML = pipe+drawFit('L',fL)+drawFit('R',fR)+dim+triad+endLab;
+}
+
 /* ============================ UI描画 ============================ */
 function renderFamChips(){
   for(const target of ['famChips','famChipsCat']){
@@ -1255,7 +1402,7 @@ function calc(){
   save(); drawDiagram();
 }
 function renderAll(){
-  renderFamChips(); renderSizes(); renderPartners(); renderDirs(); renderPicks(); renderRefs(); renderCatalog(); calc();
+  renderFamChips(); renderSizes(); renderPartners(); renderPicks(); renderRefs(); renderCatalog(); calc();
   if(document.getElementById('offSvg')) renderField();
 }
 
