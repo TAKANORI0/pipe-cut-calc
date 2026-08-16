@@ -286,6 +286,10 @@
     <div class="sizes" id="sizeChips"></div>
     <div id="partnerL" class="partner hidden"></div>
     <div id="partnerR" class="partner hidden"></div>
+    <!-- 継手の向き（2026-08-16 現場フィードバック: 図が現物と違う向きだと
+         どこを測ったか分からなくなる）。切寸には影響しない・図のみ -->
+    <div id="dirL" class="partner hidden"></div>
+    <div id="dirR" class="partner hidden"></div>
     <div id="custL" class="cust hidden">
       <label>左: 芯〜端面 L (mm)<input type="number" id="custL_a" inputmode="decimal" onchange="calc()"></label>
       <label>左: 差込/ねじ込み代 (mm)<input type="number" id="custL_i" inputmode="decimal" onchange="calc()"></label>
@@ -1004,6 +1008,24 @@ function drawDiagram(){
   const xLpt = cxL - refOffsetPx(st.L.ref);
   const xRpt = cxR + refOffsetPx(st.R.ref);
 
+  // 継手の向き（見た目のみ・控除量は不変）:
+  //  - dir='m' で枝・曲がりを反転（横引き: 上→下 ／ 立て管: 回転後に右→左）
+  //  - rtee 枝側接続は本管が直交して両側に通るので、チーズを90°回して十字に描く
+  function orient(side, fit, shape){
+    const cx = side==='L'?cxL:cxR;
+    if(fit.kind==='rtee'){
+      const o=st[side].other;
+      if(o && fit.pairs && fit.pairs[o+'x'+st.size]){   // 枝側に接続
+        const rot = side==='L' ? 90 : -90;              // 開口がパイプ側を向く回転
+        return `<g transform="rotate(${rot} ${cx} ${cy})">${shape}</g>`;
+      }
+    }
+    if(st[side].dir==='m' && (fit.kind==='elbow'||fit.kind==='tee'||fit.kind==='rtee')){
+      return `<g transform="translate(0 ${2*cy}) scale(1 -1)">${shape}</g>`;
+    }
+    return shape;
+  }
+
   function fitShape(side, fit){
     const cx = side==='L'?cxL:cxR;
     const dir = side==='L'?1:-1; // パイプ（中央）方向
@@ -1071,7 +1093,7 @@ function drawDiagram(){
       <text x="${(xLpt+xRpt)/2}" y="${dimY-8}" font-size="13" font-weight="bold" text-anchor="middle" fill="#dc2626">測定値 ${st.measured?fmt(st.measured):'?'} mm</text>
       <text x="${xLpt}" y="${dimY+20}" font-size="12" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.L.ref].label}</text>
       <text x="${xRpt}" y="${dimY+20}" font-size="12" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.R.ref].label}</text>`;
-    svg.innerHTML = fitShape('L',fL) + fitShape('R',fR) + pipe + dim;
+    svg.innerHTML = orient('L',fL,fitShape('L',fL)) + orient('R',fR,fitShape('R',fR)) + pipe + dim;
     return;
   }
 
@@ -1100,7 +1122,7 @@ function drawDiagram(){
     <text x="${dimX}" y="${yBpt+20}" font-size="12" text-anchor="middle" fill="#dc2626">${REF_DEFS[st.R.ref].label}</text>
     <text x="${vx+34}" y="${cyT-40}" font-size="12" fill="#64748b">▲ 上</text>
     <text x="${vx+34}" y="${cyB+44}" font-size="12" fill="#64748b">▼ 下</text>`;
-  svg.innerHTML = wrap(fitShape('L',fL),cyT) + wrap(fitShape('R',fR),cyB) + pipeV + dimV;
+  svg.innerHTML = wrap(orient('L',fL,fitShape('L',fL)),cyT) + wrap(orient('R',fR,fitShape('R',fR)),cyB) + pipeV + dimV;
 }
 
 /* ============================ UI描画 ============================ */
@@ -1233,9 +1255,33 @@ function calc(){
   save(); drawDiagram();
 }
 function renderAll(){
-  renderFamChips(); renderSizes(); renderPartners(); renderPicks(); renderRefs(); renderCatalog(); calc();
+  renderFamChips(); renderSizes(); renderPartners(); renderDirs(); renderPicks(); renderRefs(); renderCatalog(); calc();
   if(document.getElementById('offSvg')) renderField();
 }
+
+// 継手の向き選択（エルボの曲がり・チーズの枝）。切寸は不変・図の一致のみが目的。
+// rtee枝側は本管が両側に通る＝向きの概念が無いので出さない
+function renderDirs(){
+  for(const s of ['L','R']){
+    const el=document.getElementById('dir'+s);
+    const fit=getFit(s);
+    let show = (fit.kind==='elbow'||fit.kind==='tee'||fit.kind==='rtee');
+    if(fit.kind==='rtee'){
+      const o=st[s].other;
+      if(!o || fit.pairs[o+'x'+st.size]) show=false;
+    }
+    if(!show){ el.classList.add('hidden'); continue; }
+    el.classList.remove('hidden');
+    const pLab = st.vert?'右へ':'上へ', mLab = st.vert?'左へ':'下へ';
+    const what = fit.kind==='elbow' ? '曲がりの向き' : '枝の向き';
+    el.innerHTML = `<div class="plabel" style="color:var(--sub)">${sideName(s)} ${fit.name} の${what}（図のみ・切寸は不変）</div>
+      <div class="chips">
+        <button class="chip ${st[s].dir!=='m'?'on':''}" onclick="setDir('${s}','p')">${pLab}</button>
+        <button class="chip ${st[s].dir==='m'?'on':''}" onclick="setDir('${s}','m')">${mLab}</button>
+      </div>`;
+  }
+}
+function setDir(s,d){ st[s].dir=d; save(); drawDiagram(); renderDirs(); }
 
 /* ============================ ボトムシート ============================ */
 let sheetSide='L';
