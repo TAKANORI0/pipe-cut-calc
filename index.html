@@ -270,6 +270,8 @@
     <div class="chips" style="margin-bottom:8px">
       <button class="chip" id="orientH" onclick="setVert(false)">横引き（左右）</button>
       <button class="chip" id="orientV" onclick="setVert(true)">立て管（上下）</button>
+      <button class="chip" id="roll90" onclick="setRollStep(90)">向き90°刻み</button>
+      <button class="chip" id="roll45" onclick="setRollStep(45)">向き45°刻み</button>
     </div>
     <div class="pickrow">
       <div class="pick" onclick="openSheet('L')">
@@ -321,7 +323,7 @@
       <button class="minibtn" style="margin-left:4px" onclick="setBothRefs('face')">両方=端面</button>
     </h2>
     <svg id="diagram" viewBox="0 0 360 250" xmlns="http://www.w3.org/2000/svg"></svg>
-    <div class="legend">👆 <b>薄い点線の枝をタップ＝継手の向きを変更</b>（上・下・手前・奥。図の一致のみで切寸は変わりません）。太い実線＝現在の向き。右下の3本線がアイソメの軸（上／手前／奥）</div>
+    <div class="legend">👆 <b>薄い点線の枝をタップ＝継手の向きを変更</b>（図の一致のみで切寸は変わりません）。「向き90°刻み」＝上・下・手前・奥の4方向／「向き45°刻み」＝上手前・下奥などの斜め振り（45°ロール）を含む8方向。太い実線＝現在の向き。右下の3本線がアイソメの軸（上／手前／奥）</div>
     <div class="refrow">
       <div class="refcol">
         <div class="rlabel" id="refLabL">左の基準</div>
@@ -646,7 +648,8 @@ let st = {
   L:{fit:'l90', ref:'center', other:null},
   R:{fit:'l90', ref:'center', other:null},
   measured:null,
-  vert:false,   // false=横引き(左右) / true=立て管(上下)。L=左/上・R=右/下
+  vert:false,     // false=横引き(左右) / true=立て管(上下)。L=左/上・R=右/下
+  rollStep:90,    // 向きの刻み: 90=直交4方向 / 45=斜め振り込み8方向
 };
 try{ const s = JSON.parse(localStorage.getItem('pipeCutCalc_v2')); if(s&&s.fam) st = Object.assign(st,s);}catch(e){}
 function save(){ try{ localStorage.setItem('pipeCutCalc_v2', JSON.stringify(st)); }catch(e){} }
@@ -1131,13 +1134,35 @@ function drawDiagram_legacy2d(){
    等角投影（配管アイソメと同じ3軸）で描き、薄い点線のゴースト枝をタップすると
    継手の向きが切り替わる。向きは図の一致のためだけで、切寸（Z控除）は不変。 */
 const ISO = { d1:[0.866,0.5], d2:[0.866,-0.5], U:[0,-1] };  // 画面上の等角3軸
-function isoVec(key){ const s=key.endsWith('-')?-1:1; const a=ISO[key.slice(0,-1)]; return [a[0]*s, a[1]*s]; }
+function _nrm(x,y){ const L=Math.hypot(x,y); return [x/L,y/L]; }
+function _rot(v,th){ const c=Math.cos(th), s=Math.sin(th); return [v[0]*c-v[1]*s, v[0]*s+v[1]*c]; }
+// 方向キー→画面ベクトル（2026-08-16 フィードバック第5号: 45°刻みの向きに対応）。
+// 対角(45°ロール)のうち等角投影で画面上パイプ軸に重なるものは、少し傾けて区別する
+function dirVec(k){
+  const d1=ISO.d1, d2=ISO.d2;
+  switch(k){
+    case 'U+': return [0,-1];  case 'U-': return [0,1];
+    case 'd1+': return d1;     case 'd1-': return [-d1[0],-d1[1]];
+    case 'd2+': return d2;     case 'd2-': return [-d2[0],-d2[1]];
+    case 'UF': return _rot(_nrm(d1[0], -1+d1[1]), -0.38);  // 上手前（d2軸と重なる→傾け）
+    case 'UB': return _nrm(-d1[0], -1-d1[1]);              // 上奥
+    case 'DF': return _nrm(d1[0], 1+d1[1]);                // 下手前
+    case 'DB': return _rot(_nrm(-d1[0], 1-d1[1]), -0.38);  // 下奥（d2-と重なる→傾け）
+    case 'E':  return _nrm(d1[0]+d2[0], d1[1]+d2[1]);      // 右
+    case 'W':  return _nrm(-d1[0]-d2[0], -d1[1]-d2[1]);    // 左
+    case 'S':  return _rot(_nrm(d1[0]-d2[0], d1[1]-d2[1]), 0.30);  // 手前（縦管と重なる→傾け）
+    case 'N':  return _rot(_nrm(d2[0]-d1[0], d2[1]-d1[1]), 0.30);  // 奥（縦管と重なる→傾け）
+  }
+  return [0,-1];
+}
+function isoVec(k){ return dirVec(k); }  // 旧名互換
 function dirLabel(k){
-  return st.vert
-    ? {'d1+':'右手前','d1-':'左奥','d2+':'右奥','d2-':'左手前'}[k]
-    : {'U+':'上','U-':'下','d1+':'手前','d1-':'奥'}[k];
+  return (st.vert
+    ? {'d1+':'右手前','d1-':'左奥','d2+':'右奥','d2-':'左手前','E':'右','W':'左','S':'手前','N':'奥'}
+    : {'U+':'上','U-':'下','d1+':'手前','d1-':'奥','UF':'上手前','UB':'上奥','DF':'下手前','DB':'下奥'})[k] || k;
 }
 function setDir3(s,k){ st[s].dir3=k; save(); drawDiagram(); }
+function setRollStep(v){ st.rollStep=v; save(); renderAll(); }
 
 function drawDiagram(){
   const svg=document.getElementById('diagram');
@@ -1158,8 +1183,13 @@ function drawDiagram(){
   const add=(p,v,t)=>[p[0]+v[0]*t, p[1]+v[1]*t];
   const EL=add(C,aLR,-half), ER=add(C,aLR,half);
   const outL=[-aLR[0],-aLR[1]], outR=[aLR[0],aLR[1]];
-  const cand = ['U+','U-','d1+','d1-','d2+','d2-'].filter(k=>k.slice(0,-1)!==axisKey);
-  const candAxes = ['U','d1','d2'].filter(k=>k!==axisKey);
+  const perpKeys = st.vert ? ['d1+','d1-','d2+','d2-'] : ['U+','U-','d1+','d1-'];
+  const diagKeys = st.vert ? ['E','W','S','N'] : ['UF','UB','DF','DB'];
+  const cand = st.rollStep===45 ? perpKeys.concat(diagKeys) : perpKeys;
+  // rtee枝側の本管軸は代表方向キー1つで持ち、±両方向に描く
+  const axPerp = st.vert ? ['d1+','d2+'] : ['U+','d1+'];
+  const axDiag = st.vert ? ['E','S'] : ['UF','UB'];
+  const candAxes = st.rollStep===45 ? axPerp.concat(axDiag) : axPerp;
   const F=(n)=>n.toFixed(1);
   const seg=(p,q,ow,iw,oc,ic)=>{
     let s=`<line x1="${F(p[0])}" y1="${F(p[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="${oc}" stroke-width="${ow}" stroke-linecap="round"/>`;
@@ -1171,10 +1201,7 @@ function drawDiagram(){
 
   function curDir(side,fit){
     const v=st[side].dir3;
-    if(isEda(side,fit)){
-      const ax = v && candAxes.includes(v.slice(0,-1)) ? v.slice(0,-1) : candAxes[0];
-      return ax+'+';
-    }
+    if(isEda(side,fit)) return candAxes.includes(v) ? v : candAxes[0];
     return cand.includes(v) ? v : (st.vert?'d1+':'U+');
   }
   function ghost(side,vkey,len){
@@ -1232,14 +1259,21 @@ function drawDiagram(){
           // 枝側接続: この管は枝口に刺さり、太い本管(other)が直交して両側に通る。向き=本管の軸（2択）
           const sc=Math.min(1.7, Math.sqrt((odMap[other]||1)/(odMap[st.size]||1))+0.25);
           const ow=Math.round(20*sc), iw=Math.round(13*sc), pr=Math.round(9*sc);
-          const ax=curDir(side,fit).slice(0,-1), v=isoVec(ax+'+');
+          const axk=curDir(side,fit), v=dirVec(axk);
           const q1=add(E,v,60), q2=add(E,v,-60);
           g+=seg(q2, q1, ow, iw, '#1d4ed8','#93c5fd');
           g+=`<circle cx="${F(q1[0])}" cy="${F(q1[1])}" r="${pr}" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
               <circle cx="${F(q2[0])}" cy="${F(q2[1])}" r="${pr}" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
               <text x="${F(q1[0]+v[0]*20)}" y="${F(q1[1]+v[1]*20+4)}" font-size="12" font-weight="bold" text-anchor="middle" fill="#1d4ed8">${other}A</text>
               <text x="${F(q2[0]-v[0]*20)}" y="${F(q2[1]-v[1]*20+4)}" font-size="12" font-weight="bold" text-anchor="middle" fill="#1d4ed8">${other}A</text>`;
-          for(const ok of candAxes) if(ok!==ax) g=ghost(side,ok+'+',36)+ghost(side,ok+'-',36)+g;
+          for(const ok of candAxes) if(ok!==axk){
+            const gv=dirVec(ok), g1=add(E,gv,36), g2=add(E,gv,-36);
+            g=`<g style="cursor:pointer" onclick="setDir3('${side}','${ok}')">
+              <line x1="${F(g2[0])}" y1="${F(g2[1])}" x2="${F(g1[0])}" y2="${F(g1[1])}" stroke="rgba(0,0,0,0)" stroke-width="30"/>
+              <line x1="${F(g2[0])}" y1="${F(g2[1])}" x2="${F(g1[0])}" y2="${F(g1[1])}" stroke="#94a3b8" stroke-width="3" stroke-dasharray="5 4"/>
+              <circle cx="${F(g1[0])}" cy="${F(g1[1])}" r="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+              <circle cx="${F(g2[0])}" cy="${F(g2[1])}" r="7" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/></g>`+g;
+          }
         } else {
           // 本管側接続: この管が本管として通り抜け、細い枝(other or 同径)が1方向に出る（4択）
           const bsc = other ? Math.max(0.55, Math.sqrt((odMap[other]||1)/(odMap[st.size]||1))) : 1;
@@ -1356,6 +1390,8 @@ function renderPicks(){
     (st.vert?'上下':'左右')+'の継手・呼び径（切るパイプの径）';
   document.getElementById('orientH').classList.toggle('on', !st.vert);
   document.getElementById('orientV').classList.toggle('on', !!st.vert);
+  document.getElementById('roll90').classList.toggle('on', st.rollStep!==45);
+  document.getElementById('roll45').classList.toggle('on', st.rollStep===45);
 }
 function renderRefs(){
   for(const s of ['L','R']){
