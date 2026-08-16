@@ -226,6 +226,7 @@
 
 <div class="tabs">
   <button id="tabCalc" class="on" onclick="showTab('calc')">✂️ 切寸法</button>
+  <button id="tabSpool" onclick="showTab('spool')">🔩 スプール</button>
   <button id="tabField" onclick="showTab('field')">📐 現場計算</button>
   <button id="tabCat" onclick="showTab('cat')">📖 カタログ</button>
 </div>
@@ -342,6 +343,36 @@
   </div>
 
   <div class="note">⚠️ 寸法データはJIS規格・メーカー公表値に基づく<b>参考値</b>です。継手はメーカー・ロットで寸法が異なる場合があります。本施工前に実物・カタログで必ず確認してください。ねじ込み継手のねじ込み代は締め付け具合で±1〜2mm変わります。TS/VUキャップは全長データ未収録のため受口端面基準のみ対応。</div>
+</div>
+
+<!-- ============ スプールタブ（連続区間・v20） ============ -->
+<div id="viewSpool" class="hidden">
+  <div class="card">
+    <h2>🔩 スプール — 目の前の配管を組んでから、測って、一括で切寸
+      <button class="minibtn" onclick="spClear()">入力クリア</button>
+    </h2>
+    <div class="chips" id="spFamChips"></div>
+    <div class="sizes" id="spSizeChips"></div>
+    <div class="chips" id="spStartChips" style="margin-top:8px"></div>
+    <svg id="spoolSvg" viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="legend">① 継手を並べて現物と同じ形を作る（エルボの「曲がる向き」で経路が折れる）→ ② 各区間の芯々を測って打つ → ③ 全ピースの切寸が一度に出る。測定はすべて<b>芯々（継手の中心どうし）</b></div>
+    <div id="spNodes"></div>
+    <div class="chips" style="margin-top:8px">
+      <button class="chip" onclick="spAddNode()">＋ 継手を追加</button>
+      <button class="chip" onclick="spDelNode()">− 末尾を削除</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>測定値（区間ごとの芯々）</h2>
+    <div id="spMeas"></div>
+    <div class="fieldres" id="spOut">継手を並べて、区間の芯々を入力してください</div>
+  </div>
+  <div class="card">
+    <h2>📋 切断リスト（現場メモ）
+      <button class="minibtn" onclick="clearCutList()">全消去</button>
+    </h2>
+    <div id="cutList_spool"></div>
+  </div>
 </div>
 
 <!-- ============ 現場計算タブ ============ -->
@@ -1603,7 +1634,7 @@ function renderCutList(){
         `<span class="cval">${fmt(c.cut)}mm</span><button class="del" onclick="event.stopPropagation();removeCut(${i})">✕</button></div>`
       ).join('')
     : '<div class="cutempty">まだありません。計算結果の「＋切断リストへ追加」で貯められます。</div>';
-  for(const id of ['cutList_calc','cutList_field']){
+  for(const id of ['cutList_calc','cutList_field','cutList_spool']){
     const el = document.getElementById(id);
     if(el) el.innerHTML = html;
   }
@@ -1634,7 +1665,7 @@ function clearOffset(){
 
 /* ============================ タブ ============================ */
 function showTab(t){
-  for(const [view,btn,key] of [['viewCalc','tabCalc','calc'],['viewField','tabField','field'],['viewCat','tabCat','cat']]){
+  for(const [view,btn,key] of [['viewCalc','tabCalc','calc'],['viewSpool','tabSpool','spool'],['viewField','tabField','field'],['viewCat','tabCat','cat']]){
     document.getElementById(view).classList.toggle('hidden', t!==key);
     document.getElementById(btn).classList.toggle('on', t===key);
   }
@@ -2034,9 +2065,189 @@ function drawOffsetSvg(scene, res, T, angleLabel, W){
   svg.innerHTML = s;
 }
 
+/* ============================ スプールタブ（連続区間・v20） ============================
+   モデルファースト: 先に継手の並び（ミニスプール）を組み、区間ごとの芯々を打つと
+   全ピースの切寸が一括で出る。2点間電卓（切寸法タブ）の一般化。 */
+const SP_LABEL = {'U+':'上','U-':'下','d1+':'手前','d1-':'奥','d2+':'右','d2-':'左'};
+const SP_DIRS = Object.keys(SP_LABEL);
+let spool = { fam:'ts', size:50, start:'H',
+  nodes:[{fit:'l90',other:null,dir:'U+'},{fit:'l90',other:null,dir:'U+'},{fit:'none',other:null,dir:'U+'}],
+  meas:[null,null] };
+try{
+  if(st.spool && st.spool.nodes && st.spool.nodes.length>=2) spool = st.spool;
+  if(!FAMILIES[spool.fam]) spool.fam='ts';
+  if(!FAMILIES[spool.fam].sizes.includes(spool.size)) spool.size=FAMILIES[spool.fam].sizes.includes(50)?50:FAMILIES[spool.fam].sizes[0];
+  while(spool.meas.length !== spool.nodes.length-1){
+    if(spool.meas.length < spool.nodes.length-1) spool.meas.push(null); else spool.meas.pop();
+  }
+}catch(e){}
+function spSave(){ st.spool=spool; save(); }
+function spFam(){ return FAMILIES[spool.fam]; }
+function spFit(i){ const id=spool.nodes[i].fit; return id==='none'?null:spFam().fits.find(x=>x.id===id); }
+// スプールに置ける継手 = Z(芯基準の控除)を計算できるもの
+function spFitOptions(){ return spFam().fits.filter(f=>f.z || f.kind==='rtee'); }
+// 芯基準の控除量。null=データ不足
+function spZ(i){
+  const nd=spool.nodes[i], f=spFit(i);
+  if(!f) return 0;                                   // none=パイプ端
+  if(f.kind==='rtee'){
+    const o=nd.other; if(!o) return null;
+    if(f.pairs[spool.size+'x'+o]) return f.pairs[spool.size+'x'+o].zr;   // 本管側
+    if(f.pairs[o+'x'+spool.size]) return f.pairs[o+'x'+spool.size].zb;  // 枝側
+    return null;
+  }
+  const z=f.z && f.z[spool.size];
+  return z===undefined?null:z;
+}
+function _mix2(u,v){ const x=u[0]+v[0], y=u[1]+v[1], L=Math.hypot(x,y)||1; return [x/L,y/L]; }
+// 経路: エルボで折れる・チーズ/ソケットは直進。向きが進行方向と平行なら自動補正
+function spPath(){
+  let dir = spool.start==='V' ? dirVec('U-') : dirVec('d2+');
+  const pts=[[0,0]], dirs=[];
+  for(let i=0;i<spool.meas.length;i++){
+    dirs.push(dir);
+    pts.push([pts[i][0]+dir[0]*64, pts[i][1]+dir[1]*64]);
+    const nd=spool.nodes[i+1], f=spFit(i+1);
+    if(f && f.kind==='elbow' && i+1 < spool.nodes.length-1){
+      let v=dirVec(nd.dir||'U+');
+      if(Math.abs(v[0]*dir[0]+v[1]*dir[1])>0.95){
+        nd.dir = SP_DIRS.find(k=>{const w=dirVec(k); return Math.abs(w[0]*dir[0]+w[1]*dir[1])<0.7;}) || 'U+';
+        v=dirVec(nd.dir);
+      }
+      dir = f.angle===45 ? _mix2(dir,v) : v;
+    }
+  }
+  return {pts, dirs};
+}
+function spSetFam(k){ spool.fam=k;
+  if(!FAMILIES[k].sizes.includes(spool.size)) spool.size=FAMILIES[k].sizes.includes(50)?50:FAMILIES[k].sizes[0];
+  for(const nd of spool.nodes){ if(nd.fit!=='none' && !FAMILIES[k].fits.find(f=>f.id===nd.fit && (f.z||f.kind==='rtee'))) nd.fit='l90'; nd.other=null; }
+  spSave(); renderSpool(); }
+function spSetSize(sz){ spool.size=sz; for(const nd of spool.nodes) if(spFam().fits.find(f=>f.id===nd.fit)?.kind!=='rtee') nd.other=null; spSave(); renderSpool(); }
+function spSetStart(v){ spool.start=v; spSave(); renderSpool(); }
+function spSetFit(i,id){ spool.nodes[i].fit=id; spool.nodes[i].other=null; spSave(); renderSpool(); }
+function spSetDir(i,k){ spool.nodes[i].dir=k; spSave(); renderSpool(); }
+function spSetOther(i,o){ spool.nodes[i].other=+o; spSave(); renderSpool(); }
+function spAddNode(){ if(spool.nodes.length>=6) return;
+  spool.nodes.push({fit:'none',other:null,dir:'U+'});
+  // 直前の末尾がnoneならエルボに昇格して形が作れるように
+  const prev=spool.nodes[spool.nodes.length-2];
+  if(prev.fit==='none') prev.fit='l90';
+  spool.meas.push(null); spSave(); renderSpool(); }
+function spDelNode(){ if(spool.nodes.length<=2) return; spool.nodes.pop(); spool.meas.pop(); spSave(); renderSpool(); }
+function spClear(){ spool.meas=spool.meas.map(()=>null); spSave(); renderSpool(); }
+
+function drawSpool(){
+  const svg=document.getElementById('spoolSvg'); if(!svg) return;
+  const {pts,dirs}=spPath();
+  // 実座標→viewBoxへフィット
+  const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  const pad=56, w=Math.max(...xs)-Math.min(...xs), h=Math.max(...ys)-Math.min(...ys);
+  const VW=360, VH=Math.max(200, Math.min(320, h+2*pad));
+  const sc=Math.min((VW-2*pad)/Math.max(w,1), (VH-2*pad)/Math.max(h,1), 1.4);
+  const ox=pad-Math.min(...xs)*sc+(VW-2*pad-w*sc)/2, oy=pad-Math.min(...ys)*sc+(VH-2*pad-h*sc)/2;
+  const P=(p)=>[p[0]*sc+ox, p[1]*sc+oy];
+  const F=(n)=>n.toFixed(1);
+  svg.setAttribute('viewBox',`0 0 ${VW} ${Math.round(VH)}`);
+  let g='';
+  const seg=(p,q,ow,iw,oc,ic)=>{
+    let s=`<line x1="${F(p[0])}" y1="${F(p[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="${oc}" stroke-width="${ow}" stroke-linecap="round"/>`;
+    if(iw) s+=`<line x1="${F(p[0])}" y1="${F(p[1])}" x2="${F(q[0])}" y2="${F(q[1])}" stroke="${ic}" stroke-width="${iw}" stroke-linecap="round"/>`;
+    return s;
+  };
+  // 区間パイプ＋測定ラベル
+  for(let i=0;i<spool.meas.length;i++){
+    const a=P(pts[i]), b=P(pts[i+1]);
+    g+=seg(a,b,14,9,'#64748b','#e2e8f0');
+    const m=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    const n=[-dirs[i][1],dirs[i][0]];
+    g+=`<text x="${F(m[0]+n[0]*16)}" y="${F(m[1]+n[1]*16+4)}" font-size="11" font-weight="bold" text-anchor="middle" fill="#dc2626">${i+1}: ${spool.meas[i]?fmt(spool.meas[i]):'?'}</text>`;
+  }
+  // 継手ノード
+  for(let i=0;i<spool.nodes.length;i++){
+    const p=P(pts[i]), f=spFit(i), nd=spool.nodes[i];
+    if(!f){
+      const d=dirs[Math.min(i,dirs.length-1)], n=[-d[1],d[0]];
+      g+=`<line x1="${F(p[0]-n[0]*11)}" y1="${F(p[1]-n[1]*11)}" x2="${F(p[0]+n[0]*11)}" y2="${F(p[1]+n[1]*11)}" stroke="#dc2626" stroke-width="3.5"/>`;
+    } else {
+      g+=`<circle cx="${F(p[0])}" cy="${F(p[1])}" r="11" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>`;
+      if(f.kind==='tee'||f.kind==='rtee'){
+        const v=dirVec(nd.dir||'U+'), q=[p[0]+v[0]*26,p[1]+v[1]*26];
+        g+=seg(p,q,10,6,'#1d4ed8','#93c5fd');
+      }
+      // 末端エルボは腕を出す（向き＝経路が続く先の表現）
+      if(f.kind==='elbow' && (i===0||i===spool.nodes.length-1)){
+        const v=dirVec(nd.dir||'U+'), q=[p[0]+v[0]*26,p[1]+v[1]*26];
+        g+=seg(p,q,12,7,'#1d4ed8','#93c5fd');
+      }
+    }
+    g+=`<text x="${F(p[0])}" y="${F(p[1]-16)}" font-size="11" font-weight="bold" text-anchor="middle" fill="#1d4ed8">${i+1}</text>`;
+  }
+  svg.innerHTML=g;
+}
+
+function renderSpoolControls(){
+  document.getElementById('spFamChips').innerHTML = Object.entries(FAMILIES).map(([k,f])=>
+    `<button class="chip ${spool.fam===k?'on':''}" onclick="spSetFam('${k}')">${f.name}</button>`).join('');
+  document.getElementById('spSizeChips').innerHTML = spFam().sizes.map(sz=>
+    `<button class="chip ${spool.size===sz?'on':''}" onclick="spSetSize(${sz})">${sz}A</button>`).join('');
+  document.getElementById('spStartChips').innerHTML = [['H','スタート: 横引き'],['V','スタート: 立て管(下り)']].map(([k,l])=>
+    `<button class="chip ${spool.start===k?'on':''}" onclick="spSetStart('${k}')">${l}</button>`).join('');
+  // ノード編集行
+  const opts=(sel)=> spFitOptions().map(f=>`<option value="${f.id}" ${sel===f.id?'selected':''}>${f.name}</option>`).join('')
+    + `<option value="none" ${sel==='none'?'selected':''}>なし（パイプ端）</option>`;
+  document.getElementById('spNodes').innerHTML = spool.nodes.map((nd,i)=>{
+    const f=spFit(i);
+    let extra='';
+    if(f && (f.kind==='elbow'||f.kind==='tee')){
+      extra=`<label>曲がり/枝の向き<select onchange="spSetDir(${i},this.value)">${SP_DIRS.map(k=>
+        `<option value="${k}" ${nd.dir===k?'selected':''}>${SP_LABEL[k]}</option>`).join('')}</select></label>`;
+    }
+    if(f && f.kind==='rtee'){
+      const ps=partnersFor(f,spool.size);
+      extra=`<label>相手側口径${nd.other?'':'（⚠️選択）'}<select onchange="spSetOther(${i},this.value)">
+        <option value="">—</option>${ps.map(p=>`<option value="${p}" ${nd.other===p?'selected':''}>${p}A</option>`).join('')}</select></label>
+        <label>枝の向き<select onchange="spSetDir(${i},this.value)">${SP_DIRS.map(k=>
+        `<option value="${k}" ${nd.dir===k?'selected':''}>${SP_LABEL[k]}</option>`).join('')}</select></label>`;
+    }
+    return `<div class="cust"><label>継手${i+1}<select onchange="spSetFit(${i},this.value)">${opts(nd.fit)}</select></label>${extra}</div>`;
+  }).join('');
+  // 測定入力（値は維持して再構築）
+  document.getElementById('spMeas').innerHTML = spool.meas.map((m,i)=>
+    `<div class="cust"><label>区間${i+1} 芯々 (mm)<input type="number" id="spM${i}" inputmode="decimal" value="${m??''}" oninput="spCalc()"></label></div>`).join('');
+}
+
+let lastSpoolEntries=null;
+function spCalc(){
+  for(let i=0;i<spool.meas.length;i++){
+    const v=parseFloat(document.getElementById('spM'+i)?.value);
+    spool.meas[i]=isNaN(v)?null:v;
+  }
+  spSave();
+  const out=document.getElementById('spOut'); if(!out) return;
+  const lines=[]; const entries=[]; let ok=0;
+  const stock=(spool.fam==='ts'||spool.fam==='dv')?4000:5500;
+  for(let i=0;i<spool.meas.length;i++){
+    const zA=spZ(i), zB=spZ(i+1), m=spool.meas[i];
+    if(zA===null||zB===null){ lines.push(`区間${i+1}: ⚠️ 継手のデータ不足（呼び径・相手側口径を確認）`); continue; }
+    if(m===null){ lines.push(`区間${i+1}: 芯々を入力`); continue; }
+    const cut=m-zA-zB;
+    let warn = cut<=0?' 🔴 0以下':'';
+    if(cut>stock) warn=` ⚠️ 定尺${stock/1000}m超え`;
+    lines.push(`✂️ 区間${i+1}: ${fmt(m)} − ${fmt(zA)} − ${fmt(zB)} = <b>${fmt(cut)} mm</b>${warn}`);
+    if(cut>0){ ok++; entries.push({label:`スプール区間${i+1}｜${spFam().name} ${spool.size}A｜芯々${fmt(m)}`, cut}); }
+  }
+  lastSpoolEntries = entries.length?entries:null;
+  if(entries.length) lines.push(`<button class="addbtn" onclick="pushCuts(lastSpoolEntries)">＋ ${entries.length}件を切断リストへ追加</button>`);
+  out.innerHTML = lines.join('<br>') || '継手を並べて、区間の芯々を入力してください';
+  drawSpool();
+}
+function renderSpool(){ renderSpoolControls(); spCalc(); }
+
 /* ============================ 起動 ============================ */
 if(st.measured) document.getElementById('measured').value=st.measured;
 renderAll();
+renderSpool();
 renderCutList();
 
 /* ── 継手の向き: ドラッグで指す＋タップで回す（v19・フィードバック第6号「ぎこちない」対応）──
