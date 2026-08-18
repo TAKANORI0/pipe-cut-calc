@@ -4,7 +4,7 @@
 // 方針: cache-first + 裏で更新（stale-while-revalidate）。
 // 現場は圏外前提なのでキャッシュ優先。電波があるときに次回分を静かに更新する。
 // バージョンはデプロイスクリプトが日付で書き換える。
-const CACHE = "pipe-cut-calc-20260816-1505";
+const CACHE = "pipe-cut-calc-20260818-1220";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
